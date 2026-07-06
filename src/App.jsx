@@ -26,9 +26,12 @@ import {
   Mail,
   Sun,
   Moon,
-  Users
+  Users,
+  LogOut
 } from 'lucide-react'
 import QRCode from 'qrcode'
+import { mockAuthService } from './auth'
+import LoginView from './LoginView'
 import './App.css'
 
 // Default Initial Mock Data
@@ -492,9 +495,19 @@ const QRCodeSticker = ({ asset }) => {
 };
 
 function App() {
-  // Navigation & Role States
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [currentRole, setCurrentRole] = useState('Super Admin');
+  // Navigation & Auth States
+  const [currentUser, setCurrentUser] = useState(() => mockAuthService.getCurrentSession());
+  const [activeTab, setActiveTab] = useState(() => {
+    const session = mockAuthService.getCurrentSession();
+    if (!session) return 'login';
+    const hash = window.location.hash.replace('#/', '');
+    const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails'];
+    return hash && validTabs.includes(hash) ? hash : 'dashboard';
+  });
+  const [currentRole, setCurrentRole] = useState(() => {
+    const session = mockAuthService.getCurrentSession();
+    return session ? session.role : 'Super Admin';
+  });
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('app-theme') || 'light';
   });
@@ -571,6 +584,55 @@ function App() {
     }
     localStorage.setItem('app-theme', theme);
   }, [theme]);
+
+  // Handle hash change routing & route protection
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#/', '');
+      const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails'];
+      
+      const session = mockAuthService.getCurrentSession();
+      if (!session) {
+        if (window.location.hash !== '#/login') {
+          window.location.hash = '#/login';
+        }
+        setActiveTab('login');
+      } else {
+        if (hash === 'login' || !hash) {
+          window.location.hash = '#/dashboard';
+          setActiveTab('dashboard');
+        } else if (validTabs.includes(hash)) {
+          setActiveTab(hash);
+        }
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange();
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [currentUser]);
+
+  // Synchronize role state with currentUser session details
+  useEffect(() => {
+    if (currentUser) {
+      setCurrentRole(currentUser.role);
+    }
+  }, [currentUser]);
+
+  // Handle Logout
+  const handleLogout = () => {
+    mockAuthService.logout();
+    setCurrentUser(null);
+    setCurrentRole('Super Admin');
+    window.location.hash = '#/login';
+    setActiveTab('login');
+    addToast("Logged Out", "You have successfully signed out.", "info");
+  };
+
+  const navigate = (tab) => {
+    window.location.hash = `#/${tab}`;
+  };
 
   // Toast triggers helper
   const addToast = (title, message, type = 'info') => {
@@ -1195,14 +1257,28 @@ function App() {
       return false;
     }
 
-    // Search query matches Code, Name, Serial Number, Department, Employee
+    // Find mapped invoice vendor
+    const mappedInvoice = invoices.find(inv => inv.id === asset.invoiceId);
+    const invoiceVendor = mappedInvoice ? mappedInvoice.vendor : '';
+
+    // Find mapped AMC vendor
+    const mappedAmc = amcs.find(a => a.id === asset.amcId);
+    const amcVendor = mappedAmc ? mappedAmc.vendor : '';
+
+    // Search query matches Code, Name, Serial Number, Department, Employee, Location, Invoice, Vendor, Category, Status
+    const query = searchQuery.toLowerCase();
     const matchQuery =
-      asset.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.assignedEmployee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      asset.location.toLowerCase().includes(searchQuery.toLowerCase());
+      (asset.id || '').toLowerCase().includes(query) ||
+      (asset.name || '').toLowerCase().includes(query) ||
+      (asset.serialNumber || '').toLowerCase().includes(query) ||
+      (asset.department || '').toLowerCase().includes(query) ||
+      (asset.assignedEmployee || '').toLowerCase().includes(query) ||
+      (asset.location || '').toLowerCase().includes(query) ||
+      (asset.invoiceId || '').toLowerCase().includes(query) ||
+      (asset.category || '').toLowerCase().includes(query) ||
+      (asset.status || '').toLowerCase().includes(query) ||
+      invoiceVendor.toLowerCase().includes(query) ||
+      amcVendor.toLowerCase().includes(query);
 
     const matchCategory = assetFilterCategory === 'All' || asset.category === assetFilterCategory;
     const matchStatus = assetFilterStatus === 'All' || asset.status === assetFilterStatus;
@@ -1238,6 +1314,35 @@ function App() {
 
   const selectedEmail = emails.find(e => e.id === selectedEmailId) || emails[0];
 
+  if (activeTab === 'login') {
+    return (
+      <div className="login-page-wrapper">
+        <div className="toast-container">
+          {toasts.map(t => (
+            <div key={t.id} className={`toast ${t.type}`}>
+              <div className="toast-content">
+                <div className="toast-title">{t.title}</div>
+                <div className="toast-message">{t.message}</div>
+              </div>
+              <button className="icon-button" onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <LoginView
+          onLoginSuccess={(session) => {
+            setCurrentUser(session);
+            setCurrentRole(session.role);
+            window.location.hash = '#/dashboard';
+            setActiveTab('dashboard');
+            addToast("Welcome back", `Authenticated as ${session.name}.`, "success");
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Toast Alert Drawer */}
@@ -1263,55 +1368,55 @@ function App() {
         </div>
 
         <nav className="nav-links">
-          <button onClick={() => setActiveTab('dashboard')} className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}>
+          <button onClick={() => navigate('dashboard')} className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}>
             <LayoutDashboard className="nav-icon" />
             Dashboard
           </button>
           
-          <button onClick={() => setActiveTab('assets')} className={`nav-item ${activeTab === 'assets' ? 'active' : ''}`}>
+          <button onClick={() => navigate('assets')} className={`nav-item ${activeTab === 'assets' ? 'active' : ''}`}>
             <Package className="nav-icon" />
             Asset Directory
           </button>
 
           {currentRole !== 'Employee' && (
-            <button onClick={() => setActiveTab('allocations')} className={`nav-item ${activeTab === 'allocations' ? 'active' : ''}`}>
+            <button onClick={() => navigate('allocations')} className={`nav-item ${activeTab === 'allocations' ? 'active' : ''}`}>
               <UserCheck className="nav-icon" />
               Allocations & Movements
             </button>
           )}
 
           {currentRole !== 'Employee' && (
-            <button onClick={() => setActiveTab('amc')} className={`nav-item ${activeTab === 'amc' ? 'active' : ''}`}>
+            <button onClick={() => navigate('amc')} className={`nav-item ${activeTab === 'amc' ? 'active' : ''}`}>
               <RefreshCw className="nav-icon" />
               AMC Contracts
             </button>
           )}
 
           {currentRole !== 'Employee' && (
-            <button onClick={() => setActiveTab('finance')} className={`nav-item ${activeTab === 'finance' ? 'active' : ''}`}>
+            <button onClick={() => navigate('finance')} className={`nav-item ${activeTab === 'finance' ? 'active' : ''}`}>
               <FileText className="nav-icon" />
               Finance & Invoices
             </button>
           )}
 
-          <button onClick={() => setActiveTab('documents')} className={`nav-item ${activeTab === 'documents' ? 'active' : ''}`}>
+          <button onClick={() => navigate('documents')} className={`nav-item ${activeTab === 'documents' ? 'active' : ''}`}>
             <FolderOpen className="nav-icon" />
             Document Repository
           </button>
 
-          <button onClick={() => setActiveTab('qr_lookup')} className={`nav-item ${activeTab === 'qr_lookup' ? 'active' : ''}`}>
+          <button onClick={() => navigate('qr_lookup')} className={`nav-item ${activeTab === 'qr_lookup' ? 'active' : ''}`}>
             <QrCode className="nav-icon" />
             QR Stickers & Scan
           </button>
 
           {currentRole !== 'Employee' && (
-            <button onClick={() => setActiveTab('reports')} className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}>
+            <button onClick={() => navigate('reports')} className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}>
               <ClipboardList className="nav-icon" />
               Reports & Logs
             </button>
           )}
 
-          <button onClick={() => setActiveTab('emails')} className={`nav-item ${activeTab === 'emails' ? 'active' : ''}`}>
+          <button onClick={() => navigate('emails')} className={`nav-item ${activeTab === 'emails' ? 'active' : ''}`}>
             <Mail className="nav-icon" />
             Email Alerts Inbox
           </button>
@@ -1319,16 +1424,35 @@ function App() {
 
         {/* User profile details bottom element */}
         <div className="user-profile-section">
-          <div className="user-profile">
-            <div className="avatar">
-              {currentRole === 'Employee' ? 'AJ' : currentRole.substring(0, 2).toUpperCase()}
-            </div>
-            <div className="user-info">
-              <div className="user-name">
-                {currentRole === 'Employee' ? 'Alice Johnson' : 'Admin Operations'}
+          <div className="user-profile" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <div className="avatar">
+                {currentUser ? currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase() : (currentRole === 'Employee' ? 'AJ' : currentRole.substring(0, 2).toUpperCase())}
               </div>
-              <div className="user-role-badge">{currentRole}</div>
+              <div className="user-info" style={{ minWidth: 0 }}>
+                <div className="user-name" title={currentUser ? currentUser.name : (currentRole === 'Employee' ? 'Alice Johnson' : 'Admin Operations')}>
+                  {currentUser ? currentUser.name : (currentRole === 'Employee' ? 'Alice Johnson' : 'Admin Operations')}
+                </div>
+                <div className="user-role-badge">{currentRole}</div>
+              </div>
             </div>
+            <button
+              onClick={handleLogout}
+              className="icon-button logout-btn"
+              title="Logout"
+              style={{
+                padding: '4px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                flexShrink: 0
+              }}
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </aside>
@@ -1345,7 +1469,13 @@ function App() {
                 placeholder="Search the register — asset ID, serial, employee, department…"
                 className="search-bar"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  if (val && activeTab !== 'assets') {
+                    navigate('assets');
+                  }
+                }}
               />
             </div>
           </div>
@@ -1398,25 +1528,6 @@ function App() {
               )}
             </div>
 
-            {/* Role Manager Switcher */}
-            <div className="role-switcher-container">
-              <span className="role-label">Role:</span>
-              <select
-                className="role-select"
-                value={currentRole}
-                onChange={(e) => {
-                  setCurrentRole(e.target.value);
-                  addToast("Role Switch", `Switched acting role context to: ${e.target.value}`, "info");
-                }}
-              >
-                <option value="Super Admin">Super Admin</option>
-                <option value="IT Admin">IT Admin</option>
-                <option value="Facility Admin">Facility Admin</option>
-                <option value="Finance Team">Finance Team</option>
-                <option value="Employee">Employee (Alice Johnson)</option>
-                <option value="Auditor">Auditor</option>
-              </select>
-            </div>
           </div>
         </header>
 
@@ -1523,7 +1634,7 @@ function App() {
                             <span className="item-subtitle">{expiringAMCsCount} due for renewal this month</span>
                           </div>
                         </div>
-                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => setActiveTab('amc')}>Renew</button>
+                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => navigate('amc')}>Renew</button>
                       </div>
                     )}
 
@@ -1536,7 +1647,7 @@ function App() {
                             <span className="item-subtitle">{pendingPaymentsCount} await settlement</span>
                           </div>
                         </div>
-                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => setActiveTab('finance')}>Settle</button>
+                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => navigate('finance')}>Settle</button>
                       </div>
                     )}
 
