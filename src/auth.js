@@ -46,18 +46,35 @@ export const DEMO_CREDENTIALS = [
 
 export const mockAuthService = {
   /**
-   * Authenticates user against demo credentials.
-   * Resolves with user session info or rejects with validation error.
+   * Authenticates user against backend API or falls back to local demo credentials.
    */
-  login: (username, password, rememberMe) => {
-    return new Promise((resolve, reject) => {
-      // Simulate network latency (600ms)
-      setTimeout(() => {
-        if (!username || !password) {
-          reject(new Error("Please enter both username and password."));
-          return;
-        }
+  login: async (username, password, rememberMe) => {
+    if (!username || !password) {
+      throw new Error("Please enter both username and password.");
+    }
 
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const session = data.session;
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem('user_session', JSON.stringify(session));
+        storage.setItem('auth_token', data.token);
+        return session;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Invalid username or password.");
+      }
+    } catch (err) {
+      // Fallback if the server is offline or unreachable
+      if (err.message === "Failed to fetch" || err.name === "TypeError") {
+        console.warn("API Server offline, falling back to local credentials...");
         const user = DEMO_CREDENTIALS.find(
           u => u.username.toLowerCase() === username.toLowerCase() && u.password === password
         );
@@ -71,12 +88,14 @@ export const mockAuthService = {
           };
           const storage = rememberMe ? localStorage : sessionStorage;
           storage.setItem('user_session', JSON.stringify(session));
-          resolve(session);
+          return session;
         } else {
-          reject(new Error("Invalid username or password."));
+          throw new Error("Invalid username or password.");
         }
-      }, 600);
-    });
+      } else {
+        throw err;
+      }
+    }
   },
 
   /**
@@ -87,7 +106,7 @@ export const mockAuthService = {
     if (local) {
       try {
         return JSON.parse(local);
-      } catch (e) {
+      } catch {
         localStorage.removeItem('user_session');
       }
     }
@@ -95,7 +114,7 @@ export const mockAuthService = {
     if (session) {
       try {
         return JSON.parse(session);
-      } catch (e) {
+      } catch {
         sessionStorage.removeItem('user_session');
       }
     }
@@ -107,6 +126,8 @@ export const mockAuthService = {
    */
   logout: () => {
     localStorage.removeItem('user_session');
+    localStorage.removeItem('auth_token');
     sessionStorage.removeItem('user_session');
+    sessionStorage.removeItem('auth_token');
   }
 };

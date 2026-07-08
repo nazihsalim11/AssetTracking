@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Package, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { silk } from './engine/motion';
 import { mockAuthService, DEMO_CREDENTIALS } from './auth';
 
 export default function LoginView({ onLoginSuccess }) {
@@ -57,7 +59,7 @@ export default function LoginView({ onLoginSuccess }) {
       <div className="login-spacer-left" />
 
       {/* 1. Main Login Form Card */}
-      <div className="login-card">
+      <motion.div className="login-card" {...silk.entrance}>
         <div className="login-header">
           <div className="login-logo">
             <Package size={24} />
@@ -146,14 +148,14 @@ export default function LoginView({ onLoginSuccess }) {
                 <span>Authenticating Ledger...</span>
               </>
             ) : (
-              <span>Sign In to Register</span>
+              <span>Sign In</span>
             )}
           </button>
         </form>
-      </div>
+      </motion.div>
 
       {/* 2. Demo Credentials Side Card */}
-      <div className="demo-creds-card">
+      <motion.div className="demo-creds-card" {...silk.entrance} transition={{ ...silk.entrance.transition, delay: 0.1 }}>
         <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '4px' }}>
           <h2 className="demo-creds-title">Demo Accounts</h2>
           <p className="demo-creds-desc">Click any card below to automatically pre-fill credentials for that role context.</p>
@@ -191,7 +193,7 @@ export default function LoginView({ onLoginSuccess }) {
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

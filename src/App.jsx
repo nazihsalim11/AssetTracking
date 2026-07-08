@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Html5QrcodeScanner } from 'html5-qrcode'
+import { jsPDF } from 'jspdf'
+import * as XLSX from 'xlsx'
+import { silk } from './engine/motion'
 import {
   LayoutDashboard,
   Package,
@@ -8,7 +13,6 @@ import {
   FolderOpen,
   QrCode,
   ClipboardList,
-  Settings,
   Bell,
   Search,
   AlertCircle,
@@ -22,17 +26,529 @@ import {
   X,
   Download,
   FileUp,
-  ShieldCheck,
   Mail,
   Sun,
   Moon,
-  Users,
-  LogOut
+  LogOut,
+  ChevronDown,
+  Check,
+  Users
 } from 'lucide-react'
 import QRCode from 'qrcode'
-import { mockAuthService } from './auth'
+import { mockAuthService, DEMO_CREDENTIALS } from './auth'
 import LoginView from './LoginView'
+import { api } from './api'
 import './App.css'
+
+// Reusable Custom Premium Dropdown Component
+const CustomSelect = ({
+  options = [],
+  value,
+  onChange,
+  placeholder = 'Select option...',
+  disabled = false,
+  className = '',
+  style = {},
+  id = '',
+  name = '',
+  required = false
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const containerRef = React.useRef(null);
+  const listRef = React.useRef(null);
+
+  const normalizedOptions = options.map(opt => {
+    if (typeof opt === 'object' && opt !== null) {
+      return { value: opt.value, label: opt.label || opt.value };
+    }
+    return { value: opt, label: opt };
+  });
+
+  const selectedOption = normalizedOptions.find(opt => String(opt.value) === String(value));
+
+  const toggleDropdown = () => {
+    if (disabled) return;
+    setIsOpen(!isOpen);
+  };
+
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleKeyDown = (e) => {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+      } else if (focusedIndex >= 0 && focusedIndex < normalizedOptions.length) {
+        selectOption(normalizedOptions[focusedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setFocusedIndex(0);
+      } else {
+        const nextIndex = (focusedIndex + 1) % normalizedOptions.length;
+        setFocusedIndex(nextIndex);
+        scrollIntoView(nextIndex);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setFocusedIndex(normalizedOptions.length - 1);
+      } else {
+        const prevIndex = (focusedIndex - 1 + normalizedOptions.length) % normalizedOptions.length;
+        setFocusedIndex(prevIndex);
+        scrollIntoView(prevIndex);
+      }
+    } else if (e.key === 'Tab') {
+      setIsOpen(false);
+    }
+  };
+
+  const selectOption = (opt) => {
+    onChange({ target: { value: opt.value, name } });
+    setIsOpen(false);
+  };
+
+  const scrollIntoView = (index) => {
+    if (listRef.current) {
+      const activeEl = listRef.current.children[index];
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const initialIndex = normalizedOptions.findIndex(opt => String(opt.value) === String(value));
+      setFocusedIndex(initialIndex >= 0 ? initialIndex : 0);
+    } else {
+      setFocusedIndex(-1);
+    }
+  }, [isOpen, value]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`custom-select-container ${isOpen ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${className}`}
+      style={{ position: 'relative', width: '100%', ...style }}
+      id={id}
+    >
+      <button
+        type="button"
+        className="custom-select-trigger"
+        onClick={toggleDropdown}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="custom-select-value">
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown className="custom-select-chevron" size={16} />
+      </button>
+
+      {isOpen && (
+        <ul
+          ref={listRef}
+          className="custom-select-menu"
+          role="listbox"
+          tabIndex={-1}
+        >
+          {normalizedOptions.length === 0 ? (
+            <li className="custom-select-item is-disabled" style={{ fontStyle: 'italic', justifyContent: 'center' }}>
+              No options available
+            </li>
+          ) : (
+            normalizedOptions.map((opt, index) => {
+              const isSelected = String(opt.value) === String(value);
+              const isFocused = index === focusedIndex;
+              return (
+                <li
+                  key={opt.value}
+                  className={`custom-select-item ${isSelected ? 'is-selected' : ''} ${isFocused ? 'is-focused' : ''}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => selectOption(opt)}
+                  onMouseEnter={() => setFocusedIndex(index)}
+                >
+                  <span className="custom-select-item-label">{opt.label}</span>
+                  {isSelected && <Check className="custom-select-item-check" size={14} />}
+                </li>
+              );
+            })
+          )}
+        </ul>
+      )}
+
+      {(name || required) && (
+        <input
+          type="text"
+          name={name}
+          value={value || ''}
+          required={required}
+          readOnly
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            pointerEvents: 'none',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '1px'
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const USER_ROLE_OPTIONS = ['Super Admin', 'IT Admin', 'Facility Admin', 'Auditor', 'Employee'];
+
+const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected }) => {
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [formName, setFormName] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formRole, setFormRole] = useState('Employee');
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    setFormSuccess('');
+    if (!formUsername.trim() || !formPassword.trim() || !formName.trim()) {
+      setFormError('Username, password and name are required.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      if (isApiConnected) {
+        const { api: apiModule } = await import('./api');
+        const created = await apiModule.createUser({
+          username: formUsername.trim(),
+          password: formPassword,
+          name: formName.trim(),
+          email: formEmail.trim(),
+          role: formRole
+        });
+        setUsersList(prev => [...prev, created]);
+      } else {
+        const newUser = {
+          id: Date.now(),
+          username: formUsername.trim(),
+          name: formName.trim(),
+          email: formEmail.trim(),
+          role: formRole,
+          created_at: new Date().toISOString()
+        };
+        setUsersList(prev => [...prev, newUser]);
+      }
+      const saved = formUsername.trim();
+      setFormSuccess(`User "${saved}" created successfully!`);
+      setFormUsername('');
+      setFormPassword('');
+      setFormName('');
+      setFormEmail('');
+      setFormRole('Employee');
+    } catch (err) {
+      setFormError(err.message || 'Failed to create user.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+      {/* ---- Left: User table ---- */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="page-header" style={{ marginBottom: '20px' }}>
+          <div className="page-title-section">
+            <h2 className="page-title">User Directory</h2>
+            <p className="page-subtitle">
+              {usersList.length} registered account{usersList.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Full Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usersList.map((u, idx) => (
+                <tr key={u.id || u.username || idx}>
+                  <td><strong style={{ color: 'var(--primary)' }}>{u.username}</strong></td>
+                  <td>{u.name || u.username}</td>
+                  <td style={{ color: 'var(--text-muted)' }}>{u.email || '—'}</td>
+                  <td>
+                    <span className={`badge ${
+                      u.role === 'Super Admin' ? 'badge-available' :
+                      u.role === 'Auditor'    ? 'badge-under-maintenance' : 'badge-assigned'
+                    }`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN') : '—'}
+                  </td>
+                </tr>
+              ))}
+              {usersList.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-muted)' }}>
+                    No users found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ---- Right: Create user card ---- */}
+      <div style={{ width: '340px', flexShrink: 0 }}>
+        <div className="card" style={{ padding: '24px' }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Register New User</h3>
+          <p style={{ margin: '0 0 20px', fontSize: '13px', color: 'var(--color-muted)' }}>
+            Create a new system account
+          </p>
+          <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Username *</label>
+              <input className="form-input" type="text" placeholder="e.g. john.doe"
+                value={formUsername} onChange={e => setFormUsername(e.target.value)} autoComplete="off" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password *</label>
+              <input className="form-input" type="password" placeholder="Min. 8 characters"
+                value={formPassword} onChange={e => setFormPassword(e.target.value)} autoComplete="new-password" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Full Name *</label>
+              <input className="form-input" type="text" placeholder="e.g. John Doe"
+                value={formName} onChange={e => setFormName(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input className="form-input" type="email" placeholder="john@company.com"
+                value={formEmail} onChange={e => setFormEmail(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Role</label>
+              <CustomSelect
+                options={USER_ROLE_OPTIONS.map(r => ({ value: r, label: r }))}
+                value={formRole}
+                onChange={setFormRole}
+                placeholder="Select role"
+              />
+            </div>
+            {formError && (
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#ef4444' }}>
+                {formError}
+              </div>
+            )}
+            {formSuccess && (
+              <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#22c55e' }}>
+                {formSuccess}
+              </div>
+            )}
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ marginTop: '4px' }}>
+              {isSubmitting ? 'Creating…' : 'Create User'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Default role permission matrix ───────────────────────────────────────────
+// Keys match the action strings used in hasPermission().
+// 'Super Admin' is always full-access and cannot be edited.
+const DEFAULT_ROLE_PERMISSIONS = {
+  'IT Admin':       { view: true,  write: true,  allocate: true,  delete: true,  finance: false, viewReports: true,  viewAMC: true,  viewFinance: false },
+  'Facility Admin': { view: true,  write: true,  allocate: true,  delete: true,  finance: false, viewReports: true,  viewAMC: true,  viewFinance: false },
+  'Finance Team':   { view: true,  write: false, allocate: false, delete: false, finance: true,  viewReports: true,  viewAMC: true,  viewFinance: true  },
+  'Auditor':        { view: true,  write: false, allocate: false, delete: false, finance: false, viewReports: true,  viewAMC: true,  viewFinance: true  },
+  'Employee':       { view: true,  write: false, allocate: false, delete: false, finance: false, viewReports: false, viewAMC: false, viewFinance: false },
+};
+
+const PERMISSION_LABELS = [
+  { key: 'view',        label: 'View Assets',       description: 'Can browse the asset list' },
+  { key: 'write',       label: 'Add / Edit Assets',  description: 'Can register and modify assets' },
+  { key: 'allocate',    label: 'Allocate Assets',    description: 'Can assign assets to employees' },
+  { key: 'delete',      label: 'Delete Assets',      description: 'Can permanently remove assets' },
+  { key: 'finance',     label: 'Finance Actions',    description: 'Can manage invoices and payments' },
+  { key: 'viewReports', label: 'View Reports',       description: 'Can access Reports & Logs tab' },
+  { key: 'viewAMC',     label: 'View AMC',           description: 'Can access AMC Contracts tab' },
+  { key: 'viewFinance', label: 'View Finance Tab',   description: 'Can access Finance tab' },
+];
+
+const EDITABLE_ROLES = ['IT Admin', 'Facility Admin', 'Finance Team', 'Auditor', 'Employee'];
+
+const RolePermissionsPage = ({ rolePermissions, setRolePermissions }) => {
+  const toggle = (role, key) => {
+    setRolePermissions(prev => ({
+      ...prev,
+      [role]: { ...prev[role], [key]: !prev[role][key] }
+    }));
+  };
+
+  const resetToDefault = () => {
+    setRolePermissions(DEFAULT_ROLE_PERMISSIONS);
+  };
+
+  return (
+    <div>
+      <div className="page-header" style={{ marginBottom: '20px' }}>
+        <div className="page-title-section">
+          <h2 className="page-title">Role Permissions</h2>
+          <p className="page-subtitle">Toggle access rights for each system role. Super Admin always has full access.</p>
+        </div>
+        <div className="page-actions">
+          <button className="btn btn-secondary" onClick={resetToDefault}>
+            Reset to Defaults
+          </button>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table" style={{ minWidth: '780px' }}>
+          <thead>
+            <tr>
+              <th style={{ width: '200px' }}>Permission</th>
+              <th style={{ textAlign: 'center', color: 'var(--color-muted)', fontSize: '12px' }}>Description</th>
+              {EDITABLE_ROLES.map(role => (
+                <th key={role} style={{ textAlign: 'center', whiteSpace: 'nowrap', width: '110px' }}>
+                  <span style={{ fontSize: '12px' }}>{role}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {PERMISSION_LABELS.map(({ key, label, description }) => (
+              <tr key={key}>
+                <td style={{ fontWeight: 600, fontSize: '13px' }}>{label}</td>
+                <td style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{description}</td>
+                {EDITABLE_ROLES.map(role => {
+                  const granted = rolePermissions[role]?.[key] ?? false;
+                  return (
+                    <td key={role} style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => toggle(role, key)}
+                        title={granted ? 'Click to revoke' : 'Click to grant'}
+                        style={{
+                          width: '36px', height: '20px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          background: granted ? 'var(--primary)' : 'var(--border-color)',
+                          transition: 'background 0.2s ease',
+                          flexShrink: 0,
+                          display: 'inline-block'
+                        }}
+                        aria-label={`${granted ? 'Revoke' : 'Grant'} ${label} for ${role}`}
+                      >
+                        <span style={{
+                          position: 'absolute',
+                          top: '2px',
+                          left: granted ? '18px' : '2px',
+                          width: '16px', height: '16px',
+                          borderRadius: '50%',
+                          background: '#fff',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                        }} />
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Legend */}
+      <div style={{ marginTop: '20px', padding: '16px', background: 'var(--bg-sidebar)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+        <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+          <strong style={{ color: 'var(--text-primary)' }}>Note:</strong> Changes take effect immediately for all active sessions. 
+          Super Admin always retains full access regardless of these settings.
+          IT Admin and Facility Admin permissions apply only to their respective asset categories (IT / Office).
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const UserManagementPage = ({ usersList, setUsersList, isApiConnected, rolePermissions, setRolePermissions }) => {
+  const [usersSubTab, setUsersSubTab] = useState('directory');
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', background: 'var(--bg-sidebar)', padding: '4px', borderRadius: 'var(--radius-lg)', width: 'fit-content', border: '1px solid var(--border-color)' }}>
+        {[{ id: 'directory', label: '👥  User Directory' }, { id: 'permissions', label: '🔐  Role Permissions' }].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setUsersSubTab(tab.id)}
+            style={{
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-md)',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              fontFamily: 'var(--font-sans)',
+              transition: 'all 0.2s',
+              background: usersSubTab === tab.id ? 'var(--primary)' : 'transparent',
+              color: usersSubTab === tab.id ? 'var(--ink-contrast)' : 'var(--text-muted)',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {usersSubTab === 'directory' && (
+        <UserDirectoryPage
+          usersList={usersList}
+          setUsersList={setUsersList}
+          isApiConnected={isApiConnected}
+        />
+      )}
+      {usersSubTab === 'permissions' && (
+        <RolePermissionsPage
+          rolePermissions={rolePermissions}
+          setRolePermissions={setRolePermissions}
+        />
+      )}
+    </div>
+  );
+};
 
 // Default Initial Mock Data
 const INITIAL_ASSETS = [
@@ -418,7 +934,7 @@ const getStoredData = (key, fallback) => {
   if (stored) {
     try {
       return JSON.parse(stored);
-    } catch (e) {
+    } catch {
       return fallback;
     }
   }
@@ -522,6 +1038,84 @@ function App() {
   const [notifications, setNotifications] = useState(() => getStoredData('db_notifications', INITIAL_NOTIFICATIONS));
   const [emails, setEmails] = useState(() => getStoredData('db_emails', INITIAL_EMAILS));
   const [selectedEmailId, setSelectedEmailId] = useState(() => emails[0]?.id || null);
+  const [usersList, setUsersList] = useState(() => getStoredData('db_users', DEMO_CREDENTIALS));
+  const [rolePermissions, setRolePermissions] = useState(() => getStoredData('db_role_permissions', DEFAULT_ROLE_PERMISSIONS));
+
+  const [quickAllocAssetId, setQuickAllocAssetId] = useState('');
+  const [quickTransferAssetId, setQuickTransferAssetId] = useState('');
+
+  // Controlled states for AMC forms
+  const [newAmcServiceSchedule, setNewAmcServiceSchedule] = useState('Monthly');
+  const [mapAmcId, setMapAmcId] = useState('');
+  const [mapAssetId, setMapAssetId] = useState('');
+  const [newDocCategory, setNewDocCategory] = useState('Invoice');
+
+  // Controlled states for Modal selectors
+  const [addAssetCategory, setAddAssetCategory] = useState('IT');
+  const [addAssetInvoiceId, setAddAssetInvoiceId] = useState('');
+  const [editAssetInvoiceId, setEditAssetInvoiceId] = useState('');
+  const [allocateEmployee, setAllocateEmployee] = useState('Alice Johnson');
+  const [transferTargetType, setTransferTargetType] = useState('employee');
+  const [transferEmployee, setTransferEmployee] = useState('Alice Johnson');
+  const [newUserRole, setNewUserRole] = useState('Employee');
+
+  const [isApiConnected, setIsApiConnected] = useState(false);
+
+  // Initialize live data from PostgreSQL if connected
+  useEffect(() => {
+    const initApiData = async () => {
+      try {
+        const connected = await api.checkConnection();
+        if (connected) {
+          console.log('[AssetFlow] Connected to PostgreSQL API backend. Loading live data...');
+          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers] = await Promise.all([
+            api.getAssets(),
+            api.getAmcs(),
+            api.getInvoices(),
+            api.getDocuments(),
+            api.getMovements(),
+            api.getLogs(),
+            api.getNotifications(),
+            api.getEmails(),
+            api.getUsers()
+          ]);
+
+          const assetsList = dbAssets || [];
+          if (assetsList.length > 0) setAssets(assetsList);
+
+          if (dbAmcs && dbAmcs.length > 0) {
+            const mappedAmcs = dbAmcs.map(amc => ({
+              ...amc,
+              mappedAssets: assetsList.filter(a => a.amcId === amc.id).map(a => a.id),
+              serviceHistory: amc.serviceHistory || []
+            }));
+            setAmcs(mappedAmcs);
+          }
+
+          if (dbInvoices && dbInvoices.length > 0) {
+            const mappedInvoices = dbInvoices.map(inv => ({
+              ...inv,
+              mappedAssets: assetsList.filter(a => a.invoiceId === inv.id).map(a => a.id)
+            }));
+            setInvoices(mappedInvoices);
+          }
+          if (dbDocuments && dbDocuments.length > 0) setDocuments(dbDocuments);
+          if (dbMovements && dbMovements.length > 0) setMovements(dbMovements);
+          if (dbLogs && dbLogs.length > 0) setLogs(dbLogs);
+          if (dbNotifications && dbNotifications.length > 0) setNotifications(dbNotifications);
+          if (dbEmails && dbEmails.length > 0) setEmails(dbEmails);
+          if (dbUsers && dbUsers.length > 0) setUsersList(dbUsers);
+
+          setIsApiConnected(true);
+        } else {
+          console.log('[AssetFlow] API backend offline. Using LocalStorage fallback.');
+        }
+      } catch (err) {
+        console.warn('[AssetFlow] PostgreSQL backend connection error. Reverting to LocalStorage.', err);
+      }
+    };
+    initApiData();
+  }, []);
 
   // Modals & UI States
   const [showNotifications, setShowNotifications] = useState(false);
@@ -536,10 +1130,56 @@ function App() {
   const [allocateModal, setAllocateModal] = useState(null);
   const [transferModal, setTransferModal] = useState(null);
   const [returnModal, setReturnModal] = useState(null);
+
+  // Sync controlled editAssetInvoiceId state when Edit Asset Modal opens
+  useEffect(() => {
+    if (editAssetModal) {
+      setEditAssetInvoiceId(editAssetModal.invoiceId || '');
+    }
+  }, [editAssetModal]);
   
   // Scanners / Filters
   const [scannerSelectedAssetId, setScannerSelectedAssetId] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [isWebcamScanning, setIsWebcamScanning] = useState(false);
+
+  useEffect(() => {
+    let scanner = null;
+    if (isWebcamScanning) {
+      setTimeout(() => {
+        const element = document.getElementById("reader");
+        if (element) {
+          scanner = new Html5QrcodeScanner("reader", {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0
+          }, false);
+
+          scanner.render((decodedText) => {
+            setIsWebcamScanning(false);
+            scanner.clear().catch(err => console.error("Failed to clear scanner:", err));
+            
+            const assetId = decodedText.trim();
+            const asset = assets.find(a => a.id === assetId || assetId.includes(a.id));
+            if (asset) {
+              setAssetDetailModal(asset);
+              addToast("QR Code Scanned", `Asset lookup found: ${asset.id}`, "success");
+            } else {
+              addToast("Not Found", `No asset matches: "${assetId}"`, "error");
+            }
+          }, () => {
+            // Frame scan failure - ignore
+          });
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (scanner) {
+        scanner.clear().catch(err => console.log("Failed to clear scanner on unmount:", err));
+      }
+    };
+  }, [isWebcamScanning, assets]);
   const [assetFilterCategory, setAssetFilterCategory] = useState('All');
   const [assetFilterStatus, setAssetFilterStatus] = useState('All');
   const [assetFilterDept, setAssetFilterDept] = useState('All');
@@ -573,6 +1213,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem('db_emails', JSON.stringify(emails));
   }, [emails]);
+  useEffect(() => {
+    localStorage.setItem('db_users', JSON.stringify(usersList));
+  }, [usersList]);
+  useEffect(() => {
+    localStorage.setItem('db_role_permissions', JSON.stringify(rolePermissions));
+  }, [rolePermissions]);
 
   // Apply Theme class to Body
   useEffect(() => {
@@ -589,7 +1235,7 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '');
-      const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails'];
+      const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails', 'users'];
       
       const session = mockAuthService.getCurrentSession();
       if (!session) {
@@ -644,55 +1290,38 @@ function App() {
   };
 
   // Add Log Entry helper
-  const addAuditLog = (action, detail) => {
+  const addAuditLog = async (action, detail) => {
     const newLog = {
-      id: `LOG-${String(logs.length + 1).padStart(3, '0')}`,
+      id: `LOG-${Date.now()}`,
       timestamp: new Date().toLocaleString([], { hour: '2-digit', minute: '2-digit', hour12: true }) + " " + new Date().toLocaleDateString(),
       actor: currentRole,
       action,
       detail
     };
     setLogs(prev => [newLog, ...prev]);
+    if (isApiConnected) {
+      try {
+        await api.createLog(newLog);
+      } catch (err) {
+        console.error("Failed to save audit log to DB:", err);
+      }
+    }
   };
 
-  // Role Permissions Helper
+  // Role Permissions Helper — reads from the live `rolePermissions` config
   const hasPermission = (action, assetCategory = null) => {
-    // Super Admin can do everything
+    // Super Admin always has full access
     if (currentRole === 'Super Admin') return true;
-    
-    // Auditor is view only
-    if (currentRole === 'Auditor') {
-      return action === 'view';
-    }
-    
-    // Employee can view but is restricted in what they can see (logic applied in selectors)
-    if (currentRole === 'Employee') {
-      return action === 'view';
-    }
 
-    if (currentRole === 'IT Admin') {
-      if (assetCategory && assetCategory !== 'IT') return false; // IT admin can only manage IT assets
-      if (action === 'delete') return true; // Can delete their own category
-      if (action === 'write') return true;
-      if (action === 'allocate') return true;
-      if (action === 'view') return true;
-      return false;
-    }
+    const perms = rolePermissions[currentRole];
+    if (!perms) return false;
 
-    if (currentRole === 'Facility Admin') {
-      if (assetCategory && assetCategory !== 'Office') return false; // Facility admin only office assets
-      if (action === 'delete') return true;
-      if (action === 'write') return true;
-      if (action === 'allocate') return true;
-      if (action === 'view') return true;
-      return false;
-    }
+    // Category scoping still applies for IT Admin and Facility Admin
+    if (currentRole === 'IT Admin' && assetCategory && assetCategory !== 'IT') return false;
+    if (currentRole === 'Facility Admin' && assetCategory && assetCategory !== 'Office') return false;
 
-    if (currentRole === 'Finance Team') {
-      if (action === 'view') return true;
-      if (action === 'finance') return true; // Can manage invoices & AMCs
-      return false; // Cannot allocate or write assets directly
-    }
+    // Direct lookup from the permission matrix
+    if (action in perms) return !!perms[action];
 
     return false;
   };
@@ -739,7 +1368,7 @@ function App() {
   }, [assets, amcs]);
 
   // Handle asset addition
-  const handleAddAsset = (e) => {
+  const handleAddAsset = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const category = data.get('category');
@@ -751,7 +1380,7 @@ function App() {
 
     const cost = parseFloat(data.get('cost') || 0);
     const newAsset = {
-      id: `AST-${String(assets.length + 1).padStart(3, '0')}`,
+      id: data.get('id') || `AST-${String(assets.length + 1).padStart(3, '0')}`,
       name: data.get('name'),
       serialNumber: data.get('serialNumber'),
       category,
@@ -771,6 +1400,15 @@ function App() {
       notes: data.get('notes')
     };
 
+    if (isApiConnected) {
+      try {
+        await api.createAsset(newAsset);
+      } catch {
+        addToast("Database Error", "Failed to save asset to PostgreSQL.", "error");
+        return;
+      }
+    }
+
     // Update list
     setAssets(prev => [newAsset, ...prev]);
     // Log movement
@@ -785,13 +1423,22 @@ function App() {
       notes: `Asset registered. ${newAsset.notes}`
     };
     setMovements(prev => [newMvt, ...prev]);
-    addAuditLog("Asset Registration", `Registered asset ${newAsset.id} (${newAsset.name})`);
+    if (isApiConnected) {
+      try {
+        await api.createMovement(newMvt);
+      } catch (err) {
+        console.error("Failed to log movement to database:", err);
+      }
+    }
+    await addAuditLog("Asset Registration", `Registered asset ${newAsset.id} (${newAsset.name})`);
     addToast("Asset Registered", `${newAsset.id} added successfully to inventory.`, "success");
     setAddAssetModal(false);
+    setAddAssetCategory('IT');
+    setAddAssetInvoiceId('');
   };
 
   // Handle asset edit
-  const handleEditAsset = (e) => {
+  const handleEditAsset = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const id = editAssetModal.id;
@@ -802,41 +1449,62 @@ function App() {
       return;
     }
 
+    const updatedFields = {
+      name: data.get('name'),
+      serialNumber: data.get('serialNumber'),
+      type: data.get('type'),
+      cost: parseFloat(data.get('cost') || 0),
+      purchaseDate: data.get('purchaseDate'),
+      warrantyExpiry: data.get('warrantyExpiry'),
+      location: data.get('location'),
+      department: data.get('department'),
+      invoiceId: data.get('invoiceId'),
+      depreciationLifeYears: parseInt(data.get('depreciationLifeYears') || 5),
+      notes: data.get('notes')
+    };
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(id, updatedFields);
+      } catch {
+        addToast("Database Error", "Failed to update asset in PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setAssets(prev => prev.map(asset => {
       if (asset.id === id) {
         return {
           ...asset,
-          name: data.get('name'),
-          serialNumber: data.get('serialNumber'),
-          type: data.get('type'),
-          cost: parseFloat(data.get('cost') || 0),
-          purchaseDate: data.get('purchaseDate'),
-          warrantyExpiry: data.get('warrantyExpiry'),
-          location: data.get('location'),
-          department: data.get('department'),
-          invoiceId: data.get('invoiceId'),
-          depreciationLifeYears: parseInt(data.get('depreciationLifeYears') || 5),
-          notes: data.get('notes')
+          ...updatedFields
         };
       }
       return asset;
     }));
 
-    addAuditLog("Asset Edit", `Updated asset details for ${id}`);
+    await addAuditLog("Asset Edit", `Updated asset details for ${id}`);
     addToast("Asset Updated", `Asset ${id} details updated.`, "success");
     setEditAssetModal(null);
   };
 
   // Handle asset deletion
-  const handleDeleteAsset = (asset) => {
+  const handleDeleteAsset = async (asset) => {
     if (!hasPermission('delete', asset.category)) {
       addToast("Access Denied", `Your role (${currentRole}) is not permitted to delete ${asset.category} assets.`, "error");
       return;
     }
 
     if (window.confirm(`Are you sure you want to delete asset ${asset.id} (${asset.name}) permanently?`)) {
+      if (isApiConnected) {
+        try {
+          await api.deleteAsset(asset.id);
+        } catch {
+          addToast("Database Error", "Failed to delete asset from PostgreSQL.", "error");
+          return;
+        }
+      }
       setAssets(prev => prev.filter(a => a.id !== asset.id));
-      addAuditLog("Asset Deletion", `Deleted asset ${asset.id}`);
+      await addAuditLog("Asset Deletion", `Deleted asset ${asset.id}`);
       addToast("Asset Deleted", `Asset ${asset.id} removed from system.`, "success");
       
       // Close detail view if open
@@ -847,7 +1515,7 @@ function App() {
   };
 
   // Handle asset allocation
-  const handleAllocate = (e) => {
+  const handleAllocate = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const assetId = allocateModal.id;
@@ -859,6 +1527,15 @@ function App() {
     if (!hasPermission('allocate', allocateModal.category)) {
       addToast("Access Denied", `Your role (${currentRole}) is not permitted to allocate ${allocateModal.category} assets.`, "error");
       return;
+    }
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(assetId, { status: "Assigned", assignedEmployee: employee, department: dept });
+      } catch {
+        addToast("Database Error", "Failed to allocate asset in PostgreSQL.", "error");
+        return;
+      }
     }
 
     setAssets(prev => prev.map(a => {
@@ -879,14 +1556,21 @@ function App() {
       notes
     };
     setMovements(prev => [newMvt, ...prev]);
+    if (isApiConnected) {
+      try {
+        await api.createMovement(newMvt);
+      } catch (err) {
+        console.error("Failed to save movement to DB:", err);
+      }
+    }
 
-    addAuditLog("Asset Allocation", `Assigned ${assetId} to ${employee}`);
+    await addAuditLog("Asset Allocation", `Assigned ${assetId} to ${employee}`);
     addToast("Asset Allocated", `Asset ${assetId} assigned to ${employee}.`, "success");
     setAllocateModal(null);
   };
 
   // Handle asset transfer
-  const handleTransfer = (e) => {
+  const handleTransfer = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const assetId = transferModal.id;
@@ -906,14 +1590,27 @@ function App() {
     let prevDept = transferModal.department;
     let prevLoc = transferModal.location;
 
+    const updatedFields = {
+      assignedEmployee: target === 'employee' ? newEmployee : '',
+      department: newDept,
+      location: newLocation,
+      status: target === 'employee' ? 'Assigned' : 'Available'
+    };
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(assetId, updatedFields);
+      } catch {
+        addToast("Database Error", "Failed to transfer asset in PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setAssets(prev => prev.map(a => {
       if (a.id === assetId) {
         return {
           ...a,
-          assignedEmployee: target === 'employee' ? newEmployee : '',
-          department: newDept,
-          location: newLocation,
-          status: target === 'employee' ? 'Assigned' : 'Available'
+          ...updatedFields
         };
       }
       return a;
@@ -933,14 +1630,23 @@ function App() {
       notes
     };
     setMovements(prev => [newMvt, ...prev]);
+    if (isApiConnected) {
+      try {
+        await api.createMovement(newMvt);
+      } catch (err) {
+        console.error("Failed to save movement to DB:", err);
+      }
+    }
 
-    addAuditLog("Asset Transfer", `Transferred ${assetId} from ${source} to ${destination}`);
+    await addAuditLog("Asset Transfer", `Transferred ${assetId} from ${source} to ${destination}`);
     addToast("Asset Transferred", `Asset ${assetId} moved successfully.`, "success");
     setTransferModal(null);
+    setTransferTargetType('employee');
+    setTransferEmployee('Alice Johnson');
   };
 
   // Handle return
-  const handleReturn = (e) => {
+  const handleReturn = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const assetId = returnModal.id;
@@ -955,6 +1661,15 @@ function App() {
 
     const prevEmployee = returnModal.assignedEmployee;
     const prevDept = returnModal.department;
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(assetId, { status: "Available", assignedEmployee: '', location });
+      } catch {
+        addToast("Database Error", "Failed to process asset return in PostgreSQL.", "error");
+        return;
+      }
+    }
 
     setAssets(prev => prev.map(a => {
       if (a.id === assetId) {
@@ -974,20 +1689,42 @@ function App() {
       notes
     };
     setMovements(prev => [newMvt, ...prev]);
+    if (isApiConnected) {
+      try {
+        await api.createMovement(newMvt);
+      } catch (err) {
+        console.error("Failed to save movement to DB:", err);
+      }
+    }
 
-    addAuditLog("Asset Return", `Returned ${assetId} to inventory at ${location}`);
+    await addAuditLog("Asset Return", `Returned ${assetId} to inventory at ${location}`);
     addToast("Asset Returned", `Asset ${assetId} returned to inventory.`, "success");
     setReturnModal(null);
   };
 
   // Handle disposal
-  const handleDisposeAsset = (asset, reason) => {
+  const handleDisposeAsset = async (asset, reason) => {
     if (!hasPermission('write', asset.category)) {
       addToast("Access Denied", `Your role (${currentRole}) is not permitted to dispose assets.`, "error");
       return;
     }
 
     const date = new Date().toISOString().split('T')[0];
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(asset.id, {
+          status: "Disposed",
+          assignedEmployee: '',
+          disposalDate: date,
+          disposalReason: reason
+        });
+      } catch {
+        addToast("Database Error", "Failed to dispose asset in PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setAssets(prev => prev.map(a => {
       if (a.id === asset.id) {
         return {
@@ -1009,19 +1746,35 @@ function App() {
       from: asset.assignedEmployee ? `${asset.assignedEmployee} (${asset.department})` : "Inventory",
       to: `Disposed (${reason})`,
       actor: currentRole,
-      notes: `Asset retired. Reason: ${reason}`
+      notes: `Retired: ${reason}`
     };
     setMovements(prev => [newMvt, ...prev]);
+    if (isApiConnected) {
+      try {
+        await api.createMovement(newMvt);
+      } catch (err) {
+        console.error("Failed to save movement to DB:", err);
+      }
+    }
 
-    addAuditLog("Asset Disposal", `Retired asset ${asset.id} due to: ${reason}`);
-    addToast("Asset Retired", `Asset ${asset.id} moved to Disposed.`, "warning");
+    await addAuditLog("Asset Disposal", `Retired asset ${asset.id} due to: ${reason}`);
+    addToast("Asset Retired", `Asset ${asset.id} marked as Disposed.`, "success");
   };
 
   // Manage Invoice status
-  const handleInvoicePaymentStatus = (id, newStatus) => {
+  const handleInvoicePaymentStatus = async (id, newStatus) => {
     if (!hasPermission('finance')) {
       addToast("Access Denied", "Only the Finance Team or Super Admins can process payments.", "error");
       return;
+    }
+
+    if (isApiConnected) {
+      try {
+        await api.updateInvoice(id, { paymentStatus: newStatus });
+      } catch {
+        addToast("Database Error", "Failed to update payment status in PostgreSQL.", "error");
+        return;
+      }
     }
 
     setInvoices(prev => prev.map(inv => {
@@ -1031,12 +1784,12 @@ function App() {
       return inv;
     }));
 
-    addAuditLog("Payment Processing", `Updated invoice ${id} payment status to ${newStatus}`);
+    await addAuditLog("Payment Processing", `Updated invoice ${id} payment status to ${newStatus}`);
     addToast("Payment Updated", `Invoice ${id} marked as ${newStatus}.`, "success");
   };
 
   // Register AMC Contract
-  const handleAddAMC = (e) => {
+  const handleAddAMC = async (e) => {
     e.preventDefault();
     if (!hasPermission('finance')) {
       addToast("Access Denied", "Only Finance Team or Super Admins can register AMCs.", "error");
@@ -1045,6 +1798,23 @@ function App() {
 
     const data = new FormData(e.target);
     const cost = parseFloat(data.get('cost') || 0);
+    const fileInput = e.target.agreementFile;
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    let agreementFile = "agreement.pdf";
+
+    if (file && isApiConnected) {
+      try {
+        const uploadResult = await api.uploadFile(file);
+        agreementFile = uploadResult.fileUrl;
+      } catch {
+        addToast("Upload Error", "Failed to upload contract agreement scan.", "error");
+        return;
+      }
+    } else if (file) {
+      agreementFile = file.name;
+    }
+
     const newAmc = {
       id: `AMC-${String(amcs.length + 101).padStart(3, '0')}`,
       vendor: data.get('vendor'),
@@ -1053,18 +1823,28 @@ function App() {
       endDate: data.get('endDate'),
       mappedAssets: [],
       serviceSchedule: data.get('serviceSchedule'),
-      agreementFile: data.get('agreementFile') || 'agreement.pdf',
+      agreementFile,
       serviceHistory: []
     };
 
+    if (isApiConnected) {
+      try {
+        await api.createAmc(newAmc);
+      } catch {
+        addToast("Database Error", "Failed to save AMC contract to PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setAmcs(prev => [newAmc, ...prev]);
-    addAuditLog("AMC Registration", `Registered AMC contract ${newAmc.id} with ${newAmc.vendor}`);
+    await addAuditLog("AMC Registration", `Registered AMC contract ${newAmc.id} with ${newAmc.vendor}`);
     addToast("AMC Registered", `Contract ${newAmc.id} created successfully.`, "success");
     e.target.reset();
+    setNewAmcServiceSchedule('Monthly');
   };
 
   // Link Asset to AMC
-  const handleMapAssetToAmc = (amcId, assetId) => {
+  const handleMapAssetToAmc = async (amcId, assetId) => {
     if (!hasPermission('finance')) return;
     
     // Check if asset exists
@@ -1072,6 +1852,15 @@ function App() {
     if (!asset) {
       addToast("Invalid Asset", `Asset ${assetId} not found.`, "error");
       return;
+    }
+
+    if (isApiConnected) {
+      try {
+        await api.updateAsset(assetId, { amcId });
+      } catch {
+        addToast("Database Error", "Failed to map asset to AMC in PostgreSQL.", "error");
+        return;
+      }
     }
 
     setAmcs(prev => prev.map(amc => {
@@ -1089,12 +1878,12 @@ function App() {
       return a;
     }));
 
-    addAuditLog("AMC Asset Mapping", `Mapped asset ${assetId} to AMC Contract ${amcId}`);
+    await addAuditLog("AMC Asset Mapping", `Mapped asset ${assetId} to AMC Contract ${amcId}`);
     addToast("Asset Mapped", `${assetId} linked to ${amcId}.`, "success");
   };
 
   // Register Invoice
-  const handleAddInvoice = (e) => {
+  const handleAddInvoice = async (e) => {
     e.preventDefault();
     if (!hasPermission('finance')) {
       addToast("Access Denied", "Only Finance Team or Super Admins can upload invoices.", "error");
@@ -1104,6 +1893,27 @@ function App() {
     const data = new FormData(e.target);
     const amount = parseFloat(data.get('amount') || 0);
     const gst = parseFloat(data.get('gst') || 0);
+    const fileInput = e.target.fileName;
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    let fileName = "invoice.pdf";
+    let fileSize = "240 KB";
+    let fileUrl = "";
+
+    if (file && isApiConnected) {
+      try {
+        const uploadResult = await api.uploadFile(file);
+        fileName = uploadResult.name;
+        fileSize = uploadResult.fileSize;
+        fileUrl = uploadResult.fileUrl;
+      } catch {
+        addToast("Upload Error", "Failed to upload file attachment.", "error");
+        return;
+      }
+    } else if (file) {
+      fileName = file.name;
+      fileSize = `${(file.size / 1024).toFixed(1)} KB`;
+    }
 
     const newInv = {
       id: `INV-${String(invoices.length + 101).padStart(3, '0')}`,
@@ -1114,69 +1924,125 @@ function App() {
       date: data.get('date') || new Date().toISOString().split('T')[0],
       paymentStatus: "Pending",
       mappedAssets: [],
-      fileName: data.get('fileName') || "invoice.pdf"
+      fileName
     };
 
-    setInvoices(prev => [newInv, ...prev]);
-
-    // Also add to Document Repository
     const newDoc = {
       id: `DOC-${String(documents.length + 1).padStart(3, '0')}`,
-      name: newInv.fileName,
+      name: fileName,
       type: "Invoice",
-      size: "240 KB",
+      size: fileSize,
       uploadDate: newInv.date,
-      association: `Invoice ${newInv.id}`
+      association: `Invoice ${newInv.id}`,
+      fileUrl
     };
+
+    if (isApiConnected) {
+      try {
+        await api.createInvoice(newInv);
+        await api.createDocument(newDoc);
+      } catch {
+        addToast("Database Error", "Failed to save invoice/document to PostgreSQL.", "error");
+        return;
+      }
+    }
+
+    setInvoices(prev => [newInv, ...prev]);
     setDocuments(prev => [newDoc, ...prev]);
 
-    addAuditLog("Invoice Registration", `Uploaded invoice ${newInv.id} from ${newInv.vendor}`);
+    await addAuditLog("Invoice Registration", `Uploaded invoice ${newInv.id} from ${newInv.vendor}`);
     addToast("Invoice Registered", `Invoice ${newInv.id} uploaded. Mapped under Documents.`, "success");
     e.target.reset();
   };
 
   // Upload Document
-  const handleUploadDocument = (e) => {
+  const handleUploadDocument = async (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
+    const fileInput = e.target.file;
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    let fileName = data.get('name') || "document.pdf";
+    let fileSize = "1.5 MB";
+    let fileUrl = "";
+
+    if (file && isApiConnected) {
+      try {
+        const uploadResult = await api.uploadFile(file);
+        if (!fileName) fileName = uploadResult.name;
+        fileSize = uploadResult.fileSize;
+        fileUrl = uploadResult.fileUrl;
+      } catch {
+        addToast("Upload Error", "Failed to upload file to backend.", "error");
+        return;
+      }
+    } else if (file) {
+      if (!fileName) fileName = file.name;
+      fileSize = `${(file.size / 1024).toFixed(1)} KB`;
+    }
 
     const newDoc = {
       id: `DOC-${String(documents.length + 1).padStart(3, '0')}`,
-      name: data.get('name') || "document.pdf",
+      name: fileName,
       type: data.get('type'),
-      size: "1.5 MB",
+      size: fileSize,
       uploadDate: new Date().toISOString().split('T')[0],
-      association: data.get('association') || "General"
+      association: data.get('association') || "General",
+      fileUrl
     };
 
+    if (isApiConnected) {
+      try {
+        await api.createDocument(newDoc);
+      } catch {
+        addToast("Database Error", "Failed to save document to PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setDocuments(prev => [newDoc, ...prev]);
-    addAuditLog("Document Upload", `Uploaded document ${newDoc.name} (${newDoc.type})`);
+    await addAuditLog("Document Upload", `Uploaded document ${newDoc.name} (${newDoc.type})`);
     addToast("Document Uploaded", `${newDoc.name} stored in repository.`, "success");
     e.target.reset();
+    setNewDocCategory('Invoice');
   };
 
   // Add AMC service history
-  const handleAddAMCServiceRecord = (e, amcId) => {
+  const handleAddAMCServiceRecord = async (e, amcId) => {
     e.preventDefault();
     const data = new FormData(e.target);
     const date = data.get('date');
     const type = data.get('type');
     const notes = data.get('notes');
 
+    const amc = amcs.find(a => a.id === amcId);
+    if (!amc) return;
+
+    const updatedServiceHistory = [
+      { date, type, notes },
+      ...(amc.serviceHistory || [])
+    ];
+
+    if (isApiConnected) {
+      try {
+        await api.updateAmc(amcId, { serviceHistory: updatedServiceHistory });
+      } catch {
+        addToast("Database Error", "Failed to save service record in PostgreSQL.", "error");
+        return;
+      }
+    }
+
     setAmcs(prev => prev.map(amc => {
       if (amc.id === amcId) {
         return {
           ...amc,
-          serviceHistory: [
-            { date, type, notes },
-            ...(amc.serviceHistory || [])
-          ]
+          serviceHistory: updatedServiceHistory
         };
       }
       return amc;
     }));
 
-    addAuditLog("AMC Maintenance", `Logged service record for contract ${amcId}`);
+    await addAuditLog("AMC Maintenance", `Logged service record for contract ${amcId}`);
     addToast("Service Logged", "Maintenance service details saved.", "success");
     e.target.reset();
   };
@@ -1232,6 +2098,105 @@ function App() {
     link.click();
     document.body.removeChild(link);
     addToast("Report Exported", "Downloaded CSV report sheet.", "success");
+  };
+
+  // Export report to PDF helper
+  const handleExportPDF = () => {
+    if (generatedReport.length === 0) {
+      addToast("Export Empty", "No data to export.", "warning");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(`AssetFlow Compliance Report - ${reportType.toUpperCase()}`, 14, 20);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+    const headers = Object.keys(generatedReport[0]).filter(k => k !== 'serviceHistory' && k !== 'mappedAssets');
+    let startY = 38;
+    let startX = 14;
+    const colWidth = Math.floor(270 / headers.length);
+
+    doc.setFont("helvetica", "bold");
+    headers.forEach((h, i) => {
+      const cleanHeader = h.replace(/([A-Z])/g, ' $1').toUpperCase();
+      doc.text(cleanHeader, startX + (i * colWidth), startY);
+    });
+
+    doc.line(14, startY + 2, 280, startY + 2);
+
+    doc.setFont("helvetica", "normal");
+    let currentY = startY + 8;
+
+    generatedReport.forEach((row) => {
+      if (currentY > 190) {
+        doc.addPage();
+        currentY = 20;
+        doc.setFont("helvetica", "bold");
+        headers.forEach((h, i) => {
+          doc.text(h.toUpperCase(), startX + (i * colWidth), currentY);
+        });
+        doc.line(14, currentY + 2, 280, currentY + 2);
+        doc.setFont("helvetica", "normal");
+        currentY += 8;
+      }
+
+      headers.forEach((h, colIndex) => {
+        let val = row[h];
+        if (typeof val === 'object' && val !== null) {
+          val = JSON.stringify(val);
+        }
+        const textVal = String(val === undefined || val === null ? '' : val);
+        const truncated = textVal.length > 20 ? textVal.substring(0, 18) + '..' : textVal;
+        doc.text(truncated, startX + (colIndex * colWidth), currentY);
+      });
+
+      currentY += 7;
+    });
+
+    doc.save(`${reportType}_report_${new Date().toISOString().split('T')[0]}.pdf`);
+    addToast("Report Exported", "Downloaded PDF document report.", "success");
+  };
+
+  // Export report to Excel helper
+  const handleExportExcel = () => {
+    if (generatedReport.length === 0) {
+      addToast("Export Empty", "No data to export.", "warning");
+      return;
+    }
+
+    const cleanData = generatedReport.map(item => {
+      const cleanItem = {};
+      Object.keys(item).forEach(key => {
+        const readableKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        let val = item[key];
+        if (typeof val === 'object' && val !== null) {
+          val = JSON.stringify(val);
+        }
+        cleanItem[readableKey] = val;
+      });
+      return cleanItem;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(cleanData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Report Data");
+
+    const maxCols = cleanData.reduce((acc, row) => {
+      Object.keys(row).forEach((key, i) => {
+        const cellLength = Math.max(String(row[key] || '').length, key.length);
+        acc[i] = Math.max(acc[i] || 0, cellLength);
+      });
+      return acc;
+    }, []);
+    worksheet['!cols'] = maxCols.map(w => ({ wch: w + 2 }));
+
+    XLSX.writeFile(workbook, `${reportType}_report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    addToast("Report Exported", "Downloaded Excel spreadsheet (.xlsx).", "success");
   };
 
   // Simulate Scan code reader
@@ -1307,7 +2272,14 @@ function App() {
   const pendingPaymentsCount = invoices.filter(inv => inv.paymentStatus === 'Pending' || inv.paymentStatus === 'Overdue').length;
 
   // Clear unread notifications
-  const handleClearNotifications = () => {
+  const handleClearNotifications = async () => {
+    if (isApiConnected) {
+      try {
+        await api.markAllNotificationsRead();
+      } catch (err) {
+        console.error("Failed to clear notifications in DB:", err);
+      }
+    }
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     addToast("Notifications Cleared", "All notifications marked read.", "info");
   };
@@ -1420,6 +2392,13 @@ function App() {
             <Mail className="nav-icon" />
             Email Alerts Inbox
           </button>
+
+          {currentRole === 'Super Admin' && (
+            <button onClick={() => navigate('users')} className={`nav-item ${activeTab === 'users' ? 'active' : ''}`}>
+              <Users className="nav-icon" />
+              User Directory
+            </button>
+          )}
         </nav>
 
         {/* User profile details bottom element */}
@@ -1533,13 +2512,19 @@ function App() {
 
         {/* Dynamic Pages Area */}
         <div className="page-container">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              {...silk.entrance}
+              style={{ width: '100%' }}
+            >
           
           {/* ==================== DASHBOARD PANEL ==================== */}
           {activeTab === 'dashboard' && (
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 01 — Overview</span>
+                  <span className="page-kicker">System Overview</span>
                   <h1 className="page-title">The Asset Ledger</h1>
                   <span className="page-subtitle">
                     Fleet, contracts & settlements in brief — {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -1600,22 +2585,29 @@ function App() {
                   </div>
 
                   <div className="custom-pie-chart-mock">
+                    <span className="card-subtitle" style={{ display: 'block', marginBottom: '8px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Allocation Status Spectrum</span>
+                    <div className="allocation-spectrum-bar" style={{ display: 'flex', height: '14px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--border-color)', marginBottom: '14px' }}>
+                      {availableCount > 0 && <div className="spectrum-segment" style={{ width: `${(availableCount / totalAssetsCount) * 100}%`, backgroundColor: 'var(--status-available)', transition: 'width 0.4s ease' }} title={`Available: ${availableCount}`} />}
+                      {assignedCount > 0 && <div className="spectrum-segment" style={{ width: `${(assignedCount / totalAssetsCount) * 100}%`, backgroundColor: 'var(--status-assigned)', transition: 'width 0.4s ease' }} title={`Assigned: ${assignedCount}`} />}
+                      {maintenanceCount > 0 && <div className="spectrum-segment" style={{ width: `${(maintenanceCount / totalAssetsCount) * 100}%`, backgroundColor: 'var(--status-maintenance)', transition: 'width 0.4s ease' }} title={`Maintenance: ${maintenanceCount}`} />}
+                      {disposedCount > 0 && <div className="spectrum-segment" style={{ width: `${(disposedCount / totalAssetsCount) * 100}%`, backgroundColor: 'var(--status-disposed)', transition: 'width 0.4s ease' }} title={`Disposed: ${disposedCount}`} />}
+                    </div>
                     <div className="pie-labels">
                       <div className="pie-label-item">
                         <span className="color-dot" style={{ backgroundColor: 'var(--status-available)' }}></span>
-                        Available — {availableCount}
+                        Available — {availableCount} ({Math.round((availableCount / (totalAssetsCount || 1)) * 100)}%)
                       </div>
                       <div className="pie-label-item">
                         <span className="color-dot" style={{ backgroundColor: 'var(--status-assigned)' }}></span>
-                        Assigned — {assignedCount}
+                        Assigned — {assignedCount} ({Math.round((assignedCount / (totalAssetsCount || 1)) * 100)}%)
                       </div>
                       <div className="pie-label-item">
                         <span className="color-dot" style={{ backgroundColor: 'var(--status-maintenance)' }}></span>
-                        Maintenance — {maintenanceCount}
+                        Maintenance — {maintenanceCount} ({Math.round((maintenanceCount / (totalAssetsCount || 1)) * 100)}%)
                       </div>
                       <div className="pie-label-item">
                         <span className="color-dot" style={{ backgroundColor: 'var(--status-disposed)' }}></span>
-                        Disposed — {disposedCount}
+                        Disposed — {disposedCount} ({Math.round((disposedCount / (totalAssetsCount || 1)) * 100)}%)
                       </div>
                     </div>
                   </div>
@@ -1686,7 +2678,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 02 — The Register</span>
+                  <span className="page-kicker">Asset Register</span>
                   <h1 className="page-title">Organizational Assets</h1>
                   <span className="page-subtitle">Comprehensive lifecycle register and specifications catalog</span>
                 </div>
@@ -1704,31 +2696,46 @@ function App() {
               <div className="filters-row">
                 <div className="filters-left">
                   <span style={{ fontSize: '13px', fontWeight: '600' }}>Filter Category:</span>
-                  <select className="filter-select" value={assetFilterCategory} onChange={(e) => setAssetFilterCategory(e.target.value)}>
-                    <option value="All">All Categories</option>
-                    <option value="IT">IT Assets</option>
-                    <option value="Office">Office Infrastructure</option>
-                  </select>
+                  <CustomSelect
+                    options={[
+                      { value: "All", label: "All Categories" },
+                      { value: "IT", label: "IT Assets" },
+                      { value: "Office", label: "Office Infrastructure" }
+                    ]}
+                    value={assetFilterCategory}
+                    onChange={(e) => setAssetFilterCategory(e.target.value)}
+                    style={{ width: '160px' }}
+                  />
 
                   <span style={{ fontSize: '13px', fontWeight: '600', marginLeft: '12px' }}>Status:</span>
-                  <select className="filter-select" value={assetFilterStatus} onChange={(e) => setAssetFilterStatus(e.target.value)}>
-                    <option value="All">All Statuses</option>
-                    <option value="Available">Available</option>
-                    <option value="Assigned">Assigned</option>
-                    <option value="Under Maintenance">Under Maintenance</option>
-                    <option value="Disposed">Disposed</option>
-                  </select>
+                  <CustomSelect
+                    options={[
+                      { value: "All", label: "All Statuses" },
+                      { value: "Available", label: "Available" },
+                      { value: "Assigned", label: "Assigned" },
+                      { value: "Under Maintenance", label: "Under Maintenance" },
+                      { value: "Disposed", label: "Disposed" }
+                    ]}
+                    value={assetFilterStatus}
+                    onChange={(e) => setAssetFilterStatus(e.target.value)}
+                    style={{ width: '160px' }}
+                  />
 
                   <span style={{ fontSize: '13px', fontWeight: '600', marginLeft: '12px' }}>Department:</span>
-                  <select className="filter-select" value={assetFilterDept} onChange={(e) => setAssetFilterDept(e.target.value)}>
-                    <option value="All">All Departments</option>
-                    <option value="Engineering">Engineering</option>
-                    <option value="HR">HR</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Operations">Operations</option>
-                    <option value="IT">IT</option>
-                  </select>
+                  <CustomSelect
+                    options={[
+                      { value: "All", label: "All Departments" },
+                      { value: "Engineering", label: "Engineering" },
+                      { value: "HR", label: "HR" },
+                      { value: "Sales", label: "Sales" },
+                      { value: "Finance", label: "Finance" },
+                      { value: "Operations", label: "Operations" },
+                      { value: "IT", label: "IT" }
+                    ]}
+                    value={assetFilterDept}
+                    onChange={(e) => setAssetFilterDept(e.target.value)}
+                    style={{ width: '170px' }}
+                  />
                 </div>
 
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -1850,7 +2857,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 03 — Custody</span>
+                  <span className="page-kicker">Custody & Allocations</span>
                   <h1 className="page-title">Fleet Allocation & Movements</h1>
                   <span className="page-subtitle">Track custodian assignments, internal branch relocations, and handovers</span>
                 </div>
@@ -1868,17 +2875,26 @@ function App() {
                     <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                       <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Assign Available Asset</h4>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <select className="filter-select" style={{ flexGrow: 1 }} id="quick-alloc-asset">
-                          <option value="">-- Select Available Asset --</option>
-                          {assets.filter(a => a.status === 'Available').map(a => (
-                            <option key={a.id} value={a.id}>{a.id} - {a.name} ({a.category})</option>
-                          ))}
-                        </select>
+                        <CustomSelect
+                          options={[
+                            { value: "", label: "-- Select Available Asset --" },
+                            ...assets.filter(a => a.status === 'Available').map(a => ({
+                              value: a.id,
+                              label: `${a.id} - ${a.name} (${a.category})`
+                            }))
+                          ]}
+                          value={quickAllocAssetId}
+                          onChange={(e) => setQuickAllocAssetId(e.target.value)}
+                          style={{ flexGrow: 1 }}
+                        />
                         <button className="btn btn-primary" onClick={() => {
-                          const assetId = document.getElementById('quick-alloc-asset').value;
-                          const asset = assets.find(a => a.id === assetId);
-                          if (asset) setAllocateModal(asset);
-                          else addToast("Selection Error", "Please pick an asset from the list", "warning");
+                          const asset = assets.find(a => a.id === quickAllocAssetId);
+                          if (asset) {
+                            setAllocateModal(asset);
+                            setQuickAllocAssetId('');
+                          } else {
+                            addToast("Selection Error", "Please pick an asset from the list", "warning");
+                          }
                         }}>
                           Assign
                         </button>
@@ -1888,17 +2904,26 @@ function App() {
                     <div>
                       <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Custodian Handovers & Moves</h4>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <select className="filter-select" style={{ flexGrow: 1 }} id="quick-transfer-asset">
-                          <option value="">-- Select Assigned Asset --</option>
-                          {assets.filter(a => a.status === 'Assigned').map(a => (
-                            <option key={a.id} value={a.id}>{a.id} - {a.name} (Held by: {a.assignedEmployee})</option>
-                          ))}
-                        </select>
+                        <CustomSelect
+                          options={[
+                            { value: "", label: "-- Select Assigned Asset --" },
+                            ...assets.filter(a => a.status === 'Assigned').map(a => ({
+                              value: a.id,
+                              label: `${a.id} - ${a.name} (Held by: ${a.assignedEmployee})`
+                            }))
+                          ]}
+                          value={quickTransferAssetId}
+                          onChange={(e) => setQuickTransferAssetId(e.target.value)}
+                          style={{ flexGrow: 1 }}
+                        />
                         <button className="btn btn-primary" onClick={() => {
-                          const assetId = document.getElementById('quick-transfer-asset').value;
-                          const asset = assets.find(a => a.id === assetId);
-                          if (asset) setTransferModal(asset);
-                          else addToast("Selection Error", "Please select an assigned asset", "warning");
+                          const asset = assets.find(a => a.id === quickTransferAssetId);
+                          if (asset) {
+                            setTransferModal(asset);
+                            setQuickTransferAssetId('');
+                          } else {
+                            addToast("Selection Error", "Please select an assigned asset", "warning");
+                          }
                         }}>
                           Transfer
                         </button>
@@ -1978,9 +3003,27 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 04 — Contracts</span>
+                  <span className="page-kicker">Maintenance Agreements</span>
                   <h1 className="page-title">Annual Maintenance Contracts</h1>
                   <span className="page-subtitle">Track vendor support contracts, SLA agreements, and servicing histories</span>
+                </div>
+              </div>
+
+              <div className="stat-strip" style={{ marginBottom: '24px' }}>
+                <div className="stat-cell">
+                  <span className="stat-label">Active AMC Contracts</span>
+                  <span className="stat-value">{amcs.length}</span>
+                  <span className="stat-note">Vendor support contracts</span>
+                </div>
+                <div className="stat-cell">
+                  <span className="stat-label">Total AMC Spend</span>
+                  <span className="stat-value">${amcs.reduce((acc, curr) => acc + Number(curr.cost || 0), 0).toLocaleString()}</span>
+                  <span className="stat-note">Annual cost total</span>
+                </div>
+                <div className="stat-cell">
+                  <span className="stat-label">Service Actions Logged</span>
+                  <span className="stat-value">{amcs.reduce((acc, curr) => acc + (curr.serviceHistory || []).length, 0)}</span>
+                  <span className="stat-note">Maintenance logs</span>
                 </div>
               </div>
 
@@ -2008,16 +3051,21 @@ function App() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">Service Interval Schedule</label>
-                        <select name="serviceSchedule" className="form-input">
-                          <option value="Monthly">Monthly</option>
-                          <option value="Quarterly">Quarterly</option>
-                          <option value="Bi-Annual">Bi-Annual</option>
-                          <option value="Annual">Annual</option>
-                        </select>
+                        <CustomSelect
+                          name="serviceSchedule"
+                          options={[
+                            { value: "Monthly", label: "Monthly" },
+                            { value: "Quarterly", label: "Quarterly" },
+                            { value: "Bi-Annual", label: "Bi-Annual" },
+                            { value: "Annual", label: "Annual" }
+                          ]}
+                          value={newAmcServiceSchedule}
+                          onChange={(e) => setNewAmcServiceSchedule(e.target.value)}
+                        />
                       </div>
                       <div className="form-group">
                         <label className="form-label">SLA Agreement Document</label>
-                        <input type="text" name="agreementFile" placeholder="e.g. service_contract.pdf" className="form-input" />
+                        <input type="file" name="agreementFile" className="form-input" required />
                       </div>
                       <div className="form-group full-width" style={{ marginTop: '8px' }}>
                         <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
@@ -2044,19 +3092,23 @@ function App() {
                     }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div className="form-group">
                         <label className="form-label">Select Support Contract</label>
-                        <select name="amcId" className="form-input" required>
-                          {amcs.map(amc => (
-                            <option key={amc.id} value={amc.id}>{amc.id} - {amc.vendor}</option>
-                          ))}
-                        </select>
+                        <CustomSelect
+                          name="amcId"
+                          options={amcs.map(amc => ({ value: amc.id, label: `${amc.id} - ${amc.vendor}` }))}
+                          value={mapAmcId || amcs[0]?.id || ''}
+                          onChange={(e) => setMapAmcId(e.target.value)}
+                          required
+                        />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Select Asset to Map</label>
-                        <select name="assetId" className="form-input" required>
-                          {assets.filter(a => a.status !== 'Disposed').map(a => (
-                            <option key={a.id} value={a.id}>{a.id} - {a.name}</option>
-                          ))}
-                        </select>
+                        <CustomSelect
+                          name="assetId"
+                          options={assets.filter(a => a.status !== 'Disposed').map(a => ({ value: a.id, label: `${a.id} - ${a.name}` }))}
+                          value={mapAssetId || assets.filter(a => a.status !== 'Disposed')[0]?.id || ''}
+                          onChange={(e) => setMapAssetId(e.target.value)}
+                          required
+                        />
                       </div>
                       <button type="submit" className="btn btn-secondary" style={{ marginTop: '8px' }}>
                         Link Asset
@@ -2098,11 +3150,11 @@ function App() {
                         </div>
                         <div>
                           <span style={{ color: 'var(--text-secondary)' }}>Linked Assets: </span>
-                          <strong>{amc.mappedAssets.join(', ') || 'No mapped assets'}</strong>
+                          <strong>{(amc.mappedAssets || []).join(', ') || 'No mapped assets'}</strong>
                         </div>
                         <div>
                           <span style={{ color: 'var(--text-secondary)' }}>Last Servicing: </span>
-                          <strong>{amc.serviceHistory.length > 0 ? amc.serviceHistory[0].date : 'No records'}</strong>
+                          <strong>{(amc.serviceHistory || []).length > 0 ? amc.serviceHistory[0].date : 'No records'}</strong>
                         </div>
                       </div>
 
@@ -2150,7 +3202,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 05 — Accounts</span>
+                  <span className="page-kicker">Financial Ledger</span>
                   <h1 className="page-title">Procurement, Invoices & Finance</h1>
                   <span className="page-subtitle">Map equipment purchases, tax calculations, and process vendor settlements</span>
                 </div>
@@ -2184,7 +3236,7 @@ function App() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">PDF Invoice Scan File</label>
-                        <input type="text" name="fileName" placeholder="e.g. invoice_corp.pdf" className="form-input" />
+                        <input type="file" name="fileName" className="form-input" required />
                       </div>
                       <div className="form-group full-width" style={{ marginTop: '8px' }}>
                         <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
@@ -2205,19 +3257,19 @@ function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                       <span>Total Procurement Spend:</span>
                       <span style={{ fontWeight: '700' }}>
-                        ${invoices.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
+                        ${invoices.reduce((acc, curr) => acc + Number(curr.amount || 0) + (Number(curr.amount || 0) * (Number(curr.gst || 0) / 100)), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                       <span>Pending Settlements:</span>
                       <span style={{ fontWeight: '700', color: 'var(--status-maintenance)' }}>
-                        ${invoices.filter(i => i.paymentStatus !== 'Paid').reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
+                        ${invoices.filter(i => i.paymentStatus !== 'Paid').reduce((acc, curr) => acc + Number(curr.amount || 0) + (Number(curr.amount || 0) * (Number(curr.gst || 0) / 100)), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                       <span>Estimated Accrued Taxes (GST):</span>
                       <span style={{ fontWeight: '700', color: 'var(--primary)' }}>
-                        ${invoices.reduce((acc, curr) => acc + (curr.amount * (curr.gst / 100)), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ${invoices.reduce((acc, curr) => acc + (Number(curr.amount || 0) * (Number(curr.gst || 0) / 100)), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                   </div>
@@ -2243,17 +3295,19 @@ function App() {
                   </thead>
                   <tbody>
                     {invoices.map(inv => {
-                      const total = inv.amount + (inv.amount * (inv.gst / 100));
+                      const amountNum = Number(inv.amount || 0);
+                      const gstNum = Number(inv.gst || 0);
+                      const total = amountNum + (amountNum * (gstNum / 100));
                       return (
                         <tr key={inv.id}>
                           <td style={{ fontFamily: 'var(--mono)', fontSize: '11px', fontWeight: '700', color: 'var(--primary)' }}>{inv.id}</td>
                           <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{inv.poReference}</td>
                           <td style={{ fontWeight: '600' }}>{inv.vendor}</td>
                           <td style={{ fontSize: '12px' }}>{inv.date}</td>
-                          <td>${inv.amount.toLocaleString()}</td>
+                          <td>${amountNum.toLocaleString()}</td>
                           <td>{inv.gst}%</td>
                           <td style={{ fontWeight: '700' }}>${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                          <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.mappedAssets.join(', ') || 'No mapped assets'}</td>
+                          <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{(inv.mappedAssets || []).join(', ') || 'No mapped assets'}</td>
                           <td>
                             <span className={`badge`} style={{
                               backgroundColor: inv.paymentStatus === 'Paid' ? 'var(--status-available-bg)' : inv.paymentStatus === 'Pending' ? 'var(--status-maintenance-bg)' : inv.paymentStatus === 'Overdue' ? 'var(--status-disposed-bg)' : 'var(--status-assigned-bg)',
@@ -2264,17 +3318,12 @@ function App() {
                           </td>
                           <td>
                             {hasPermission('finance') ? (
-                              <select
-                                className="filter-select"
-                                style={{ padding: '4px 8px', fontSize: '11px' }}
+                              <CustomSelect
+                                options={['Pending', 'Partially Paid', 'Paid', 'Overdue']}
                                 value={inv.paymentStatus}
                                 onChange={(e) => handleInvoicePaymentStatus(inv.id, e.target.value)}
-                              >
-                                <option value="Pending">Pending</option>
-                                <option value="Partially Paid">Partially Paid</option>
-                                <option value="Paid">Paid</option>
-                                <option value="Overdue">Overdue</option>
-                              </select>
+                                style={{ width: '130px' }}
+                              />
                             ) : (
                               <span style={{ fontSize: '11px', fontStyle: 'italic', color: 'var(--text-muted)' }}>Authorized only</span>
                             )}
@@ -2293,7 +3342,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 06 — The Archive</span>
+                  <span className="page-kicker">Document Archive</span>
                   <h1 className="page-title">Digital Document Repository</h1>
                   <span className="page-subtitle">Unified safehouse for invoices, warranty certificates, and SLA documents</span>
                 </div>
@@ -2306,19 +3355,29 @@ function App() {
                   <form onSubmit={handleUploadDocument} className="form-grid">
                     <div className="form-group">
                       <label className="form-label">File Descriptor Name</label>
-                      <input type="text" name="name" placeholder="e.g. server_warranty_certificate.pdf" className="form-input" required />
+                      <input type="text" name="name" placeholder="e.g. Server Warranty Certificate" className="form-input" required />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Document Category</label>
-                      <select name="type" className="form-input" required>
-                        <option value="Invoice">Invoice</option>
-                        <option value="Warranty Certificate">Warranty Certificate</option>
-                        <option value="AMC Agreement">AMC Agreement</option>
-                        <option value="Vendor Contract">Vendor Contract</option>
-                        <option value="Service Report">Service Report</option>
-                      </select>
+                      <CustomSelect
+                        name="type"
+                        options={[
+                          { value: "Invoice", label: "Invoice" },
+                          { value: "Warranty Certificate", label: "Warranty Certificate" },
+                          { value: "AMC Agreement", label: "AMC Agreement" },
+                          { value: "Vendor Contract", label: "Vendor Contract" },
+                          { value: "Service Report", label: "Service Report" }
+                        ]}
+                        value={newDocCategory}
+                        onChange={(e) => setNewDocCategory(e.target.value)}
+                        required
+                      />
                     </div>
-                    <div className="form-group full-width">
+                    <div className="form-group">
+                      <label className="form-label">Attach File Scan</label>
+                      <input type="file" name="file" className="form-input" required />
+                    </div>
+                    <div className="form-group">
                       <label className="form-label">Map Association Reference</label>
                       <input type="text" name="association" placeholder="e.g. Asset AST-002, AMC AMC-101" className="form-input" required />
                     </div>
@@ -2350,8 +3409,13 @@ function App() {
               <div className="doc-grid" style={{ marginTop: '16px' }}>
                 {documents.map(doc => (
                   <div key={doc.id} className="doc-card" onClick={() => {
-                    alert(`Initiating secure mock download for: ${doc.name}`);
-                    addToast("Secure Download", `File ${doc.name} download started.`, "success");
+                    if (doc.fileUrl) {
+                      window.open(`http://localhost:5000${doc.fileUrl}`, '_blank');
+                      addToast("Opening Document", `Displaying file: ${doc.name}`, "info");
+                    } else {
+                      alert(`Initiating secure mock download for: ${doc.name}`);
+                      addToast("Secure Download", `File ${doc.name} download started.`, "success");
+                    }
                   }}>
                     <div className="doc-type-icon">
                       <FileText size={20} />
@@ -2379,44 +3443,59 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 07 — Tagging Desk</span>
+                  <span className="page-kicker">Asset Identification</span>
                   <h1 className="page-title">QR Security Stickers</h1>
                   <span className="page-subtitle">Print individual barcode tags or scan code labels to trace items</span>
                 </div>
               </div>
 
               <div className="dashboard-grid-secondary">
-                {/* QR Scanner simulator */}
+                {/* QR Scanner */}
                 <div className="card">
-                  <span className="card-title">Secure Mobile QR Scanner Simulator</span>
+                  <span className="card-title">Secure Mobile QR Scanner</span>
                   <div className="qr-scanner-box">
-                    {isScanning && <div className="scanner-laser"></div>}
-                    <QrCode size={64} style={{ color: isScanning ? 'var(--secondary)' : 'var(--primary)' }} />
-                    <p style={{ fontSize: '13px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      {isScanning ? "Scanning simulated camera feed..." : "Select an asset to test scanner lookup:"}
-                    </p>
+                    {isWebcamScanning ? (
+                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                        <div id="reader" style={{ width: '100%', maxWidth: '350px', background: 'var(--border)', borderRadius: '8px', overflow: 'hidden' }}></div>
+                        <button className="btn btn-secondary" onClick={() => setIsWebcamScanning(false)} style={{ width: '100%' }}>
+                          Cancel Camera Scan
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {isScanning && <div className="scanner-laser"></div>}
+                        <QrCode size={64} style={{ color: isScanning ? 'var(--secondary)' : 'var(--primary)' }} />
+                        <p style={{ fontSize: '13px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          {isScanning ? "Scanning simulated camera feed..." : "Scan with camera, or select an asset below to test:"}
+                        </p>
 
-                    <div style={{ width: '100%', display: 'flex', gap: '8px' }}>
-                      <select
-                        className="filter-select"
-                        style={{ flexGrow: 1 }}
-                        value={scannerSelectedAssetId}
-                        onChange={(e) => setScannerSelectedAssetId(e.target.value)}
-                        disabled={isScanning}
-                      >
-                        <option value="">-- Choose Asset Tag to Scan --</option>
-                        {assets.map(a => (
-                          <option key={a.id} value={a.id}>{a.id} - {a.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => handleSimulateScan(scannerSelectedAssetId)}
-                        disabled={isScanning || !scannerSelectedAssetId}
-                      >
-                        Simulate Scan
-                      </button>
-                    </div>
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <button className="btn btn-primary" onClick={() => setIsWebcamScanning(true)} style={{ width: '100%', marginBottom: '4px' }}>
+                            Activate Webcam Scanner
+                          </button>
+                          
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <CustomSelect
+                              options={[
+                                { value: "", label: "-- Choose Asset Tag to Scan --" },
+                                ...assets.map(a => ({ value: a.id, label: `${a.id} - ${a.name}` }))
+                              ]}
+                              value={scannerSelectedAssetId}
+                              onChange={(e) => setScannerSelectedAssetId(e.target.value)}
+                              disabled={isScanning}
+                              style={{ flexGrow: 1 }}
+                            />
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleSimulateScan(scannerSelectedAssetId)}
+                              disabled={isScanning || !scannerSelectedAssetId}
+                            >
+                              Simulate Scan
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -2448,7 +3527,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 08 — Records</span>
+                  <span className="page-kicker">Analytical Reports</span>
                   <h1 className="page-title">Compliance Reports & Audit Logs</h1>
                   <span className="page-subtitle">Extract spreadsheets for audit, or review secure historical system logs</span>
                 </div>
@@ -2476,13 +3555,21 @@ function App() {
                 </button>
               </div>
 
-              <div className="page-actions" style={{ justifyContent: 'flex-end', margin: '0' }}>
+              <div className="page-actions" style={{ justifyContent: 'flex-end', margin: '0', gap: '8px' }}>
                 <button className="btn btn-secondary" onClick={handleExportCSV}>
                   <Download size={16} />
-                  Export CSV sheet
+                  CSV
+                </button>
+                <button className="btn btn-secondary" onClick={handleExportExcel}>
+                  <Download size={16} />
+                  Excel (.xlsx)
+                </button>
+                <button className="btn btn-secondary" onClick={handleExportPDF}>
+                  <Download size={16} />
+                  PDF
                 </button>
                 <button className="btn btn-primary" onClick={() => window.print()}>
-                  Print Report Document
+                  Print Page
                 </button>
               </div>
 
@@ -2565,7 +3652,7 @@ function App() {
                             <td>${r.cost}</td>
                             <td>{r.startDate} to {r.endDate}</td>
                             <td>{r.serviceSchedule}</td>
-                            <td>{r.mappedAssets.join(', ')}</td>
+                            <td>{(r.mappedAssets || []).join(', ')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2705,7 +3792,7 @@ function App() {
             <>
               <div className="page-header">
                 <div className="page-title-section">
-                  <span className="page-kicker">№ 09 — Correspondence</span>
+                  <span className="page-kicker">Stakeholder Alerts</span>
                   <h1 className="page-title">Email Alerts Inbox</h1>
                   <span className="page-subtitle">Auditable log of outgoing warnings sent to procurement and operations stakeholders</span>
                 </div>
@@ -2751,6 +3838,19 @@ function App() {
             </>
           )}
 
+          {/* ==================== USER DIRECTORY TAB ==================== */}
+          {activeTab === 'users' && currentRole === 'Super Admin' && (
+            <UserManagementPage
+              usersList={usersList}
+              setUsersList={setUsersList}
+              isApiConnected={isApiConnected}
+              rolePermissions={rolePermissions}
+              setRolePermissions={setRolePermissions}
+            />
+          )}
+            </motion.div>
+          </AnimatePresence>
+
         </div>
       </main>
 
@@ -2771,10 +3871,16 @@ function App() {
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">Asset Classification</label>
-                    <select name="category" className="form-input" required>
-                      <option value="IT">IT Hardware</option>
-                      <option value="Office">Office Infrastructure</option>
-                    </select>
+                    <CustomSelect
+                      name="category"
+                      options={[
+                        { value: "IT", label: "IT Hardware" },
+                        { value: "Office", label: "Office Infrastructure" }
+                      ]}
+                      value={addAssetCategory}
+                      onChange={(e) => setAddAssetCategory(e.target.value)}
+                      required
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Equipment Model Name</label>
@@ -2802,12 +3908,15 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Procured Invoice Ref</label>
-                    <select name="invoiceId" className="form-input">
-                      <option value="">-- No associated invoice --</option>
-                      {invoices.map(i => (
-                        <option key={i.id} value={i.id}>{i.id} - {i.vendor}</option>
-                      ))}
-                    </select>
+                    <CustomSelect
+                      name="invoiceId"
+                      options={[
+                        { value: "", label: "-- No associated invoice --" },
+                        ...invoices.map(i => ({ value: i.id, label: `${i.id} - ${i.vendor}` }))
+                      ]}
+                      value={addAssetInvoiceId}
+                      onChange={(e) => setAddAssetInvoiceId(e.target.value)}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Initial Location Branch</label>
@@ -2875,12 +3984,15 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Procured Invoice Ref</label>
-                    <select name="invoiceId" defaultValue={editAssetModal.invoiceId} className="form-input">
-                      <option value="">-- No associated invoice --</option>
-                      {invoices.map(i => (
-                        <option key={i.id} value={i.id}>{i.id} - {i.vendor}</option>
-                      ))}
-                    </select>
+                    <CustomSelect
+                      name="invoiceId"
+                      options={[
+                        { value: "", label: "-- No associated invoice --" },
+                        ...invoices.map(i => ({ value: i.id, label: `${i.id} - ${i.vendor}` }))
+                      ]}
+                      value={editAssetInvoiceId}
+                      onChange={(e) => setEditAssetInvoiceId(e.target.value)}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Location Branch</label>
@@ -2923,12 +4035,18 @@ function App() {
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">Select Employee Custodian</label>
-                  <select name="employee" className="form-input" required>
-                    <option value="Alice Johnson">Alice Johnson (HR)</option>
-                    <option value="Bob Smith">Bob Smith (Engineering)</option>
-                    <option value="Charlie Brown">Charlie Brown (HR)</option>
-                    <option value="Diana Prince">Diana Prince (Finance)</option>
-                  </select>
+                  <CustomSelect
+                    name="employee"
+                    options={[
+                      { value: "Alice Johnson", label: "Alice Johnson (HR)" },
+                      { value: "Bob Smith", label: "Bob Smith (Engineering)" },
+                      { value: "Charlie Brown", label: "Charlie Brown (HR)" },
+                      { value: "Diana Prince", label: "Diana Prince (Finance)" }
+                    ]}
+                    value={allocateEmployee}
+                    onChange={(e) => setAllocateEmployee(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Allocation Department</label>
@@ -2970,28 +4088,34 @@ function App() {
 
                 <div className="form-group">
                   <label className="form-label">Transfer Target Destination</label>
-                  <select name="targetType" className="form-input" id="transfer-target-type" onChange={(e) => {
-                    const empSection = document.getElementById('transfer-emp-group');
-                    if (e.target.value === 'department') {
-                      empSection.style.display = 'none';
-                    } else {
-                      empSection.style.display = 'flex';
-                    }
-                  }} required>
-                    <option value="employee">Another Employee Custodian</option>
-                    <option value="department">Back to Department Inventory</option>
-                  </select>
+                  <CustomSelect
+                    name="targetType"
+                    options={[
+                      { value: "employee", label: "Another Employee Custodian" },
+                      { value: "department", label: "Back to Department Inventory" }
+                    ]}
+                    value={transferTargetType}
+                    onChange={(e) => setTransferTargetType(e.target.value)}
+                    required
+                  />
                 </div>
 
-                <div className="form-group" id="transfer-emp-group" style={{ marginTop: '12px' }}>
-                  <label className="form-label">New Employee Custodian</label>
-                  <select name="employee" className="form-input">
-                    <option value="Alice Johnson">Alice Johnson (HR)</option>
-                    <option value="Bob Smith">Bob Smith (Engineering)</option>
-                    <option value="Charlie Brown">Charlie Brown (HR)</option>
-                    <option value="Diana Prince">Diana Prince (Finance)</option>
-                  </select>
-                </div>
+                {transferTargetType !== 'department' && (
+                  <div className="form-group" style={{ marginTop: '12px' }}>
+                    <label className="form-label">New Employee Custodian</label>
+                    <CustomSelect
+                      name="employee"
+                      options={[
+                        { value: "Alice Johnson", label: "Alice Johnson (HR)" },
+                        { value: "Bob Smith", label: "Bob Smith (Engineering)" },
+                        { value: "Charlie Brown", label: "Charlie Brown (HR)" },
+                        { value: "Diana Prince", label: "Diana Prince (Finance)" }
+                      ]}
+                      value={transferEmployee}
+                      onChange={(e) => setTransferEmployee(e.target.value)}
+                    />
+                  </div>
+                )}
 
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Target Department</label>
