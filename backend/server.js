@@ -794,14 +794,15 @@ app.post('/api/movements', async (req, res) => {
 
 
 // --- DOCUMENTS API ---
-// Requires authentication so the repository is never readable anonymously. Which
-// signed-in roles may view it is governed by the client role-permission matrix
-// (viewDocuments), consistent with how the Reports, AMC and Finance tabs are gated;
-// that matrix is a frontend construct, so it is not re-enforced here.
+// Access is enforced server-side against the role_permissions matrix, so a role
+// without viewDocuments cannot read the repository even by calling the API directly.
 app.get('/api/documents', async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   try {
+    if (!(await roleAllows(user.role, 'viewDocuments'))) {
+      return res.status(403).json({ error: 'Your role is not permitted to view the Document Repository.' });
+    }
     const result = await db.query('SELECT * FROM documents ORDER BY created_at DESC');
     res.json(result.rows);
   } catch (err) {
@@ -1043,6 +1044,83 @@ app.post('/api/notifications/bulk/read', async (req, res) => {
   } catch (err) {
     console.error('POST /api/notifications/bulk/read failed:', err);
     res.status(500).json({ error: 'Bulk update failed: ' + err.message });
+  }
+});
+
+// --- ROLE PERMISSIONS ---
+// The authoritative permission matrix. Was frontend-only; now every client fetches
+// it from here and Super Admins persist edits to the database.
+
+// Cached briefly so per-request enforcement checks do not each hit the database.
+let rolePermissionsCache = null;
+let rolePermissionsCachedAt = 0;
+const ROLE_PERMS_TTL_MS = 30_000;
+
+const loadRolePermissions = async ({ fresh = false } = {}) => {
+  if (!fresh && rolePermissionsCache && Date.now() - rolePermissionsCachedAt < ROLE_PERMS_TTL_MS) {
+    return rolePermissionsCache;
+  }
+  const { rows } = await db.query('SELECT role, permissions FROM role_permissions');
+  rolePermissionsCache = Object.fromEntries(rows.map((r) => [r.role, r.permissions]));
+  rolePermissionsCachedAt = Date.now();
+  return rolePermissionsCache;
+};
+
+// Super Admin is unconditionally allowed; every other role is governed by the matrix.
+const roleAllows = async (role, permission) => {
+  if (role === 'Super Admin') return true;
+  const matrix = await loadRolePermissions();
+  return Boolean(matrix[role] && matrix[role][permission]);
+};
+
+app.get('/api/role-permissions', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  try {
+    res.json(await loadRolePermissions({ fresh: true }));
+  } catch (err) {
+    console.error('GET /api/role-permissions failed:', err);
+    res.status(500).json({ error: 'Could not load role permissions: ' + err.message });
+  }
+});
+
+app.patch('/api/role-permissions', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (user.role !== 'Super Admin') {
+    return res.status(403).json({ error: 'Only Super Admins can change role permissions.' });
+  }
+  // { role: { permKey: bool, ... }, ... } — merged over what exists, so a partial
+  // payload (one toggle) does not wipe the rest of a role's flags.
+  const updates = req.body && typeof req.body === 'object' ? req.body : null;
+  if (!updates) return res.status(400).json({ error: 'Payload must be a { role: permissions } object' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const [role, perms] of Object.entries(updates)) {
+      if (role === 'Super Admin' || !perms || typeof perms !== 'object') continue;
+      await client.query(
+        `INSERT INTO role_permissions (role, permissions, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (role) DO UPDATE
+           SET permissions = role_permissions.permissions || $2::jsonb, updated_at = NOW()`,
+        [role, JSON.stringify(perms)]
+      );
+    }
+    await client.query('COMMIT');
+    rolePermissionsCache = null; // force a fresh read on the next enforcement check
+    await db.query(
+      `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1,$2,'Role Permissions',$3)`,
+      [new Date().toLocaleString(), user.name || user.username, `Updated: ${Object.keys(updates).join(', ')}`]
+    );
+    res.json(await loadRolePermissions({ fresh: true }));
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PATCH /api/role-permissions failed:', err);
+    res.status(500).json({ error: 'Could not update role permissions: ' + err.message });
+  } finally {
+    client.release();
   }
 });
 

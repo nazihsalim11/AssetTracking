@@ -218,6 +218,10 @@ export const api = {
   },
   retryFailedNotifications: () => apiFetch('/notifications/retry-failed', { method: 'POST' }),
 
+  // Role permissions — the authoritative matrix, fetched from and saved to the DB.
+  getRolePermissions: () => apiFetch('/role-permissions'),
+  updateRolePermissions: (updates) => apiFetch('/role-permissions', { method: 'PATCH', body: JSON.stringify(updates) }),
+
   // Emails
   getEmails: () => apiFetch('/emails'),
   deleteEmail: (id) => apiFetch(`/emails/${id}`, { method: 'DELETE' }),

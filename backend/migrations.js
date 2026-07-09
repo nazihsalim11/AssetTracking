@@ -477,6 +477,27 @@ const runMigrations = async () => {
       }
     }
 
+    // 7g. Role permissions. Previously a frontend-only matrix in localStorage that was
+    //     never sent to the server; now the authoritative source. One JSONB row per
+    //     role holds its permission flags, so adding a permission key later needs no
+    //     schema change. Seeded once with the historical defaults.
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        role VARCHAR(50) PRIMARY KEY,
+        permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.directQuery(`
+      INSERT INTO role_permissions (role, permissions) VALUES
+        ('IT Admin',       '{"view":true,"write":true,"allocate":true,"delete":true,"finance":false,"viewReports":true,"viewAMC":true,"viewFinance":false,"viewDocuments":true}'::jsonb),
+        ('Facility Admin', '{"view":true,"write":true,"allocate":true,"delete":true,"finance":false,"viewReports":true,"viewAMC":true,"viewFinance":false,"viewDocuments":true}'::jsonb),
+        ('Finance Team',   '{"view":true,"write":false,"allocate":false,"delete":false,"finance":true,"viewReports":true,"viewAMC":true,"viewFinance":true,"viewDocuments":true}'::jsonb),
+        ('Auditor',        '{"view":true,"write":false,"allocate":false,"delete":false,"finance":false,"viewReports":true,"viewAMC":true,"viewFinance":true,"viewDocuments":true}'::jsonb),
+        ('Employee',       '{"view":true,"write":false,"allocate":false,"delete":false,"finance":false,"viewReports":false,"viewAMC":false,"viewFinance":false,"viewDocuments":false}'::jsonb)
+      ON CONFLICT (role) DO NOTHING;
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

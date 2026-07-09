@@ -1161,16 +1161,40 @@ const PERMISSION_LABELS = [
 
 const EDITABLE_ROLES = ['IT Admin', 'Facility Admin', 'Finance Team', 'Auditor', 'Employee'];
 
-const RolePermissionsPage = ({ rolePermissions, setRolePermissions }) => {
+const RolePermissionsPage = ({ rolePermissions, setRolePermissions, isApiConnected, addToast }) => {
+  const [saving, setSaving] = useState(false);
+
+  // Persist to the database. The matrix is authoritative server-side, so a toggle is
+  // written through immediately; the UI updates optimistically and reverts on failure.
+  const persist = async (updates, nextMatrix) => {
+    const previous = rolePermissions;
+    setRolePermissions(nextMatrix);
+    if (!isApiConnected) return;
+    setSaving(true);
+    try {
+      const saved = await api.updateRolePermissions(updates);
+      if (saved && typeof saved === 'object') setRolePermissions(saved);
+    } catch (err) {
+      setRolePermissions(previous);
+      addToast?.('Save failed', err.message || 'Could not update role permissions.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggle = (role, key) => {
-    setRolePermissions(prev => ({
-      ...prev,
-      [role]: { ...prev[role], [key]: !prev[role][key] }
-    }));
+    const next = !rolePermissions[role][key];
+    persist(
+      { [role]: { [key]: next } },
+      { ...rolePermissions, [role]: { ...rolePermissions[role], [key]: next } }
+    );
   };
 
   const resetToDefault = () => {
-    setRolePermissions(DEFAULT_ROLE_PERMISSIONS);
+    // Send the full default for every editable role.
+    const updates = {};
+    for (const role of EDITABLE_ROLES) updates[role] = DEFAULT_ROLE_PERMISSIONS[role];
+    persist(updates, { ...DEFAULT_ROLE_PERMISSIONS });
   };
 
   return (
@@ -1298,6 +1322,8 @@ const UserManagementPage = ({ usersList, setUsersList, isApiConnected, rolePermi
         <RolePermissionsPage
           rolePermissions={rolePermissions}
           setRolePermissions={setRolePermissions}
+          isApiConnected={isApiConnected}
+          addToast={addToast}
         />
       )}
     </div>
@@ -1921,19 +1947,24 @@ function App() {
         if (cancelled) return;
         if (connected) {
           console.log('[AssetFlow] Loading live data for the current session...');
-          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments] = await Promise.all([
+          // getDocuments 403s for roles without viewDocuments (enforced server-side),
+          // so it is made resilient here — an unauthorised repository yields [] rather
+          // than failing the whole batch.
+          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments, dbRolePerms] = await Promise.all([
             api.getAssets(),
             api.getAmcs(),
             api.getInvoices(),
-            api.getDocuments(),
+            api.getDocuments().catch(() => []),
             api.getMovements(),
             api.getLogs(),
             api.getNotifications(),
             api.getEmails(),
             api.getUsers(),
-            api.getAssignments()
+            api.getAssignments(),
+            api.getRolePermissions()
           ]);
           if (cancelled) return;
+          if (dbRolePerms && typeof dbRolePerms === 'object') setRolePermissions(dbRolePerms);
 
           // Promise.all above rejects if any fetch fails, so reaching this point
           // means every response is authoritative — including an empty one. Always
