@@ -9,6 +9,9 @@
     "cleanup:orphans": "node cleanupOrphans.js",
     "cleanup:orphans:dry": "node cleanupOrphans.js --dry-run"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",
     "bcryptjs": "^3.0.3",
