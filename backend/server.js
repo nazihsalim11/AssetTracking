@@ -812,19 +812,25 @@ app.get('/api/documents', async (req, res) => {
 });
 
 app.post('/api/documents', async (req, res) => {
-  const { id, name, type, size, uploadDate, association, fileUrl } = req.body;
-  const query = `
-    INSERT INTO documents (id, name, type, file_size, upload_date, association, file_url)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING *;
-  `;
-  const values = [id, name, type, size || '', uploadDate, association || '', fileUrl || ''];
-
+  const user = requireUser(req, res);
+  if (!user) return;
   try {
-    const result = await db.query(query, values);
+    if (!(await roleAllows(user.role, 'viewDocuments'))) {
+      return res.status(403).json({ error: 'Your role is not permitted to add documents.' });
+    }
+    const { name, type, size, uploadDate, association, fileUrl } = req.body;
+    // The database issues the id from a sequence; any client-supplied id is ignored.
+    const idRow = await db.query(`SELECT 'DOC-' || LPAD(nextval('documents_doc_seq')::text, 3, '0') AS id`);
+    const id = idRow.rows[0].id;
+
+    const result = await db.query(
+      `INSERT INTO documents (id, name, type, file_size, upload_date, association, file_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [id, name, type, size || '', uploadDate, association || '', fileUrl || '']
+    );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('POST /api/documents failed:', err);
     res.status(500).json({ error: 'Database insertion failed: ' + err.message });
   }
 });
@@ -3247,6 +3253,27 @@ app.post('/api/auth/change-password', async (req, res) => {
 });
 
 // --- USER MANAGEMENT API ---
+// Department options, derived from the directory rather than a hardcoded list, so the
+// dropdowns reflect the departments that actually exist. Unioned with a small seed set
+// so a brand-new database still offers sensible defaults.
+app.get('/api/departments', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  try {
+    const { rows } = await db.query(
+      `SELECT DISTINCT TRIM(department) AS department FROM users
+       WHERE department IS NOT NULL AND TRIM(department) <> ''
+       ORDER BY 1`
+    );
+    const seeds = ['IT', 'HR', 'Finance', 'Operations', 'Administration'];
+    const merged = [...new Set([...rows.map((r) => r.department), ...seeds])].sort();
+    res.json(merged);
+  } catch (err) {
+    console.error('GET /api/departments failed:', err);
+    res.status(500).json({ error: 'Could not load departments: ' + err.message });
+  }
+});
+
 app.get('/api/users', async (req, res) => {
   try {
     const result = await db.query(

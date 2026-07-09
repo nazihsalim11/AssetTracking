@@ -218,6 +218,9 @@ export const api = {
   },
   retryFailedNotifications: () => apiFetch('/notifications/retry-failed', { method: 'POST' }),
 
+  // Department options, derived from the directory.
+  getDepartments: () => apiFetch('/departments'),
+
   // Role permissions — the authoritative matrix, fetched from and saved to the DB.
   getRolePermissions: () => apiFetch('/role-permissions'),
   updateRolePermissions: (updates) => apiFetch('/role-permissions', { method: 'PATCH', body: JSON.stringify(updates) }),

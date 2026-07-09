@@ -498,6 +498,21 @@ const runMigrations = async () => {
       ON CONFLICT (role) DO NOTHING;
     `);
 
+    // 7h. Document IDs were generated on the client from the array length
+    //     (DOC-${length+1}) — collision-prone and not authoritative. A sequence makes
+    //     the database issue them. Start it above the highest existing DOC-NNN so no
+    //     id is reused.
+    await db.directQuery(`CREATE SEQUENCE IF NOT EXISTS documents_doc_seq;`);
+    // Advance the sequence past the highest existing DOC-NNN, but never rewind it —
+    // rewinding to the current max would reissue an id whose row was later deleted.
+    await db.directQuery(`
+      SELECT setval('documents_doc_seq', GREATEST(
+        (SELECT COALESCE(MAX(NULLIF(regexp_replace(id, '\\D', '', 'g'), ''))::int, 0) FROM documents WHERE id ~ '^DOC-'),
+        (SELECT last_value FROM documents_doc_seq),
+        1
+      ));
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

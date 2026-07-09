@@ -290,7 +290,7 @@ const CustomSelect = ({
 
 const USER_ROLE_OPTIONS = ['Super Admin', 'IT Admin', 'Facility Admin', 'Auditor', 'Employee'];
 
-const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImportClick, addToast, onUsersDeleted }) => {
+const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImportClick, addToast, onUsersDeleted, departments = [] }) => {
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formName, setFormName] = useState('');
@@ -782,7 +782,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                 {showBulkDept && (
                   <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                     <CustomSelect 
-                      options={['IT', 'HR', 'Finance', 'Operations', 'Engineering', 'Sales'].map(d => ({ value: d, label: d }))} 
+                      options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))} 
                       value={bulkDeptValue} 
                       onChange={e => setBulkDeptValue(e.target.value)}
                     />
@@ -997,7 +997,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
               <div className="form-group">
                 <label className="form-label">Department</label>
                 <CustomSelect
-                  options={['IT', 'HR', 'Finance', 'Operations', 'Engineering', 'Sales'].map(d => ({ value: d, label: d }))}
+                  options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))}
                   value={formDepartment}
                   onChange={e => setFormDepartment(e.target.value)}
                   disabled={isSubmitting}
@@ -1068,7 +1068,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                   <div className="form-group">
                     <label className="form-label">Department</label>
                     <CustomSelect
-                      options={['IT', 'HR', 'Finance', 'Operations', 'Engineering', 'Sales'].map(d => ({ value: d, label: d }))}
+                      options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))}
                       value={editFormDepartment}
                       onChange={e => setEditFormDepartment(e.target.value)}
                     />
@@ -1265,7 +1265,7 @@ const RolePermissionsPage = ({ rolePermissions, setRolePermissions, isApiConnect
   );
 };
 
-const UserManagementPage = ({ usersList, setUsersList, isApiConnected, rolePermissions, setRolePermissions, onBulkImportClick, addToast, onUsersDeleted, currentRole }) => {
+const UserManagementPage = ({ usersList, setUsersList, isApiConnected, rolePermissions, setRolePermissions, onBulkImportClick, addToast, onUsersDeleted, currentRole, departments = [] }) => {
   const [usersSubTab, setUsersSubTab] = useState('directory');
   return (
     <div>
@@ -1300,6 +1300,7 @@ const UserManagementPage = ({ usersList, setUsersList, isApiConnected, rolePermi
           onBulkImportClick={onBulkImportClick}
           addToast={addToast}
           onUsersDeleted={onUsersDeleted}
+          departments={departments}
         />
       )}
       {usersSubTab === 'permissions' && (
@@ -1446,6 +1447,7 @@ function App() {
   // defaults (identical to the DB seed) only gate the UI during that first request.
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
   const [assignments, setAssignments] = useState([]);
+  const [departments, setDepartments] = useState(['IT', 'HR', 'Finance', 'Operations', 'Administration']);
 
   const [quickAllocAssetId, setQuickAllocAssetId] = useState('');
   const [quickTransferAssetId, setQuickTransferAssetId] = useState('');
@@ -1523,7 +1525,7 @@ function App() {
           // getDocuments 403s for roles without viewDocuments (enforced server-side),
           // so it is made resilient here — an unauthorised repository yields [] rather
           // than failing the whole batch.
-          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments, dbRolePerms] = await Promise.all([
+          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments, dbRolePerms, dbDepartments] = await Promise.all([
             api.getAssets(),
             api.getAmcs(),
             api.getInvoices(),
@@ -1534,10 +1536,12 @@ function App() {
             api.getEmails(),
             api.getUsers(),
             api.getAssignments(),
-            api.getRolePermissions()
+            api.getRolePermissions(),
+            api.getDepartments().catch(() => null)
           ]);
           if (cancelled) return;
           if (dbRolePerms && typeof dbRolePerms === 'object') setRolePermissions(dbRolePerms);
+          if (Array.isArray(dbDepartments) && dbDepartments.length) setDepartments(dbDepartments);
 
           // Promise.all above rejects if any fetch fails, so reaching this point
           // means every response is authoritative — including an empty one. Always
@@ -2794,9 +2798,8 @@ function App() {
         return inv;
       }));
 
-      // Create a Document entry for it
+      // The database assigns the document id; reflect the row it returns.
       const newDoc = {
-        id: `DOC-${String(documents.length + 1).padStart(3, '0')}`,
         name: fileName,
         type: "Invoice",
         size: fileSize,
@@ -2804,10 +2807,8 @@ function App() {
         association: `Invoice ${invoiceId}`,
         fileUrl
       };
-      if (isApiConnected) {
-        await api.createDocument(newDoc);
-      }
-      setDocuments(prev => [newDoc, ...prev]);
+      const savedDoc = await api.createDocument(newDoc);
+      setDocuments(prev => [savedDoc || newDoc, ...prev]);
 
       addToast("Success", `Invoice PDF uploaded successfully for ${invoiceId}.`, "success");
     } catch (err) {
@@ -3118,7 +3119,6 @@ function App() {
     }
 
     const newDoc = {
-      id: `DOC-${String(documents.length + 1).padStart(3, '0')}`,
       name: fileName,
       type: data.get('type'),
       size: fileSize,
@@ -3127,17 +3127,21 @@ function App() {
       fileUrl
     };
 
-    if (isApiConnected) {
-      try {
-        await api.createDocument(newDoc);
-      } catch {
-        addToast("Database Error", "Failed to save document to PostgreSQL.", "error");
-        return;
-      }
+    // Database-only: the server assigns the id and returns the stored row.
+    let savedDoc = newDoc;
+    if (!isApiConnected) {
+      addToast("Not Connected", "Cannot reach the server. The document was not saved.", "error");
+      return;
+    }
+    try {
+      savedDoc = await api.createDocument(newDoc) || newDoc;
+    } catch (err) {
+      addToast("Database Error", err.message || "Failed to save document.", "error");
+      return;
     }
 
-    setDocuments(prev => [newDoc, ...prev]);
-    await addAuditLog("Document Upload", `Uploaded document ${newDoc.name} (${newDoc.type})`);
+    setDocuments(prev => [savedDoc, ...prev]);
+    await addAuditLog("Document Upload", `Uploaded document ${savedDoc.name} (${savedDoc.type})`);
     addToast("Document Uploaded", `${newDoc.name} stored in repository.`, "success");
     e.target.reset();
     setNewDocCategory('Invoice');
@@ -4184,7 +4188,7 @@ function App() {
                       {showBulkAssetDept && (
                         <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                           <CustomSelect 
-                            options={['IT', 'HR', 'Finance', 'Operations', 'Engineering', 'Sales'].map(d => ({ value: d, label: d }))} 
+                            options={departments.map(d => ({ value: d, label: d }))} 
                             value={bulkAssetDeptValue} 
                             onChange={e => setBulkAssetDeptValue(e.target.value)}
                           />
@@ -5987,6 +5991,7 @@ function App() {
               addToast={addToast}
               onUsersDeleted={handleUsersDeleted}
               currentRole={currentRole}
+              departments={departments}
             />
           )}
 
