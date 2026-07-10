@@ -102,8 +102,7 @@ const ArticleEditor = ({ article, categories, allArticles, onSave, onCancel, add
       <div className="form-group">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <label className="form-label">Body (Markdown)</label>
-          <button type="button" className="btn btn-secondary" style={{ minHeight: '30px', padding: '4px 10px', fontSize: '12px' }}
-                  onClick={() => setPreview((p) => !p)}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreview((p) => !p)}>
             {preview ? <Edit2 size={13} /> : <Eye size={13} />}
             {preview ? 'Edit' : 'Preview'}
           </button>
@@ -113,7 +112,7 @@ const ArticleEditor = ({ article, categories, allArticles, onSave, onCancel, add
             <Markdown>{body}</Markdown>
           </div>
         ) : (
-          <textarea className="form-input" style={{ minHeight: '240px', fontFamily: 'var(--font-mono)', fontSize: '12.5px' }}
+          <textarea className="form-input form-input-sm" style={{ fontFamily: 'var(--font-mono)'}}
                     value={body} onChange={(e) => setBody(e.target.value)} required
                     placeholder={'## Heading\n\nUse **bold**, `code`, - bullets and [links](https://example.com).'} />
         )}

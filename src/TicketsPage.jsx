@@ -4,13 +4,14 @@ import {
   Plus, Eye, MessageSquare, AlertCircle, Clock, ChevronDown, Check, 
   Trash2, Send, Paperclip, ClipboardList, Info, FileText, CheckCircle2,
   Users, User, UserCheck, AlertTriangle, Search, Filter, ArrowLeft, RefreshCw, BookOpen, Lightbulb, 
-  Layers, CheckSquare, Square, Building, ShieldCheck, Mail, Tag, HelpCircle
+  Layers, Building, ShieldCheck, Mail, Tag, HelpCircle
 } from 'lucide-react';
 import { api } from './api';
 import { openStoredFile } from './files';
 import Modal from './Modal';
 import Markdown from './Markdown';
 import FloatingBulkBar from './FloatingBulkBar';
+import Checkbox from './Checkbox';
 import RelativeTime from './RelativeTime';
 import { parseTimestamp } from './time';
 
@@ -949,6 +950,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
   };
 
   const isAllPageSelected = paginatedTickets.length > 0 && paginatedTickets.every(t => selectedTicketIds.includes(t.id));
+  const isSomePageSelected = paginatedTickets.some(t => selectedTicketIds.includes(t.id));
 
   const handleSelectAllPage = () => {
     const paginatedIds = paginatedTickets.map(t => t.id);
@@ -1060,15 +1062,15 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
             {/* Filter toolbar */}
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <div className="search-field" style={{ flex: 1 }}>
+                  <Search size={16} className="search-field-icon" />
                   <input
                     type="text"
                     placeholder="Search tickets by ID, subject, desc, requester or assignee..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="form-input"
-                    style={{ paddingLeft: '38px', width: '100%' }}
+
                   />
                 </div>
                 {(filterStatus || filterPriority || filterDepartment || filterCategory || filterAssignee || filterRequester || searchQuery) && (
@@ -1093,7 +1095,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
               {/* Multi-select filter dropdowns */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                     <option value="">Status: All</option>
                     {['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => (
                       <option key={st} value={st}>{st}</option>
@@ -1101,7 +1103,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
                     <option value="">Priority: All</option>
                     {['Critical', 'Medium', 'Low'].map(p => (
                       <option key={p} value={p}>{p}</option>
@@ -1109,7 +1111,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterDepartment} onChange={e => setFilterDepartment(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterDepartment} onChange={e => setFilterDepartment(e.target.value)}>
                     <option value="">Department: All</option>
                     {distinctDepartments.map(d => (
                       <option key={d} value={d}>{d}</option>
@@ -1117,7 +1119,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
                     <option value="">Category: All</option>
                     {distinctCategories.map(c => (
                       <option key={c} value={c}>{c}</option>
@@ -1125,7 +1127,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
                     <option value="">Assignee: All</option>
                     {usersList.filter(u => u.role !== 'Employee').map(u => (
                       <option key={u.id} value={u.id}>{u.name || u.username}</option>
@@ -1133,7 +1135,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} value={filterRequester} onChange={e => setFilterRequester(e.target.value)}>
+                  <select className="form-input form-input-sm" value={filterRequester} onChange={e => setFilterRequester(e.target.value)}>
                     <option value="">Requester: All</option>
                     {distinctRequesters.map(req => (
                       <option key={req} value={req}>{req}</option>
@@ -1150,12 +1152,12 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   <tr>
                     {currentRole !== 'Employee' && (
                       <th style={{ width: '40px', textAlign: 'center' }}>
-                        <button 
-                          onClick={handleSelectAllPage}
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', margin: 'auto' }}
-                        >
-                          {isAllPageSelected ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
-                        </button>
+                        <Checkbox
+                          checked={isAllPageSelected}
+                          indeterminate={isSomePageSelected}
+                          onChange={handleSelectAllPage}
+                          aria-label="Select all tickets on this page"
+                        />
                       </th>
                     )}
                     <th onClick={() => handleSort('ticketId')} style={{ cursor: 'pointer' }}>
@@ -1193,12 +1195,11 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <tr key={t.id} className={isSelected ? 'row-selected' : ''}>
                           {currentRole !== 'Employee' && (
                             <td style={{ textAlign: 'center' }}>
-                              <button 
-                                onClick={() => handleRowCheckbox(t.id)}
-                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', margin: 'auto' }}
-                              >
-                                {isSelected ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}
-                              </button>
+                              <Checkbox
+                                checked={isSelected}
+                                onChange={() => handleRowCheckbox(t.id)}
+                                aria-label={`Select ticket ${t.ticketId}`}
+                              />
                             </td>
                           )}
                           <td style={{ fontFamily: 'var(--font-mono)', fontWeight: '700', color: 'var(--primary)' }}>{t.ticketId}</td>
@@ -1255,10 +1256,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
               </div>
               <div className="action-row">
                 <button
-                  className="btn btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '12px' }}
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => prev - 1)}
+                  className="btn btn-secondary btn-sm" disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)}
                 >
                   Previous
                 </button>
@@ -1280,10 +1278,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   </button>
                 ))}
                 <button
-                  className="btn btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '12px' }}
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => prev + 1)}
+                  className="btn btn-secondary btn-sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)}
                 >
                   Next
                 </button>
@@ -1309,8 +1304,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   {/* Status update */}
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <select
-                      className="form-input"
-                      style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                      className="form-input form-input-sm"
+                      style={{ width: '130px'}}
                       value={bulkStatusVal}
                       onChange={e => setBulkStatusVal(e.target.value)}
                     >
@@ -1319,14 +1314,14 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <option key={st} value={st}>{st}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleBulkStatus(bulkStatusVal)}>Go</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkStatus(bulkStatusVal)}>Go</button>
                   </div>
 
                   {/* Priority update */}
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <select
-                      className="form-input"
-                      style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                      className="form-input form-input-sm"
+                      style={{ width: '130px'}}
                       value={bulkPriorityVal}
                       onChange={e => setBulkPriorityVal(e.target.value)}
                     >
@@ -1335,14 +1330,14 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleBulkPriority(bulkPriorityVal)}>Go</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkPriority(bulkPriorityVal)}>Go</button>
                   </div>
 
                   {/* Category update */}
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <select
-                      className="form-input"
-                      style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                      className="form-input form-input-sm"
+                      style={{ width: '130px'}}
                       value={bulkCategoryVal}
                       onChange={e => setBulkCategoryVal(e.target.value)}
                     >
@@ -1351,15 +1346,15 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleBulkCategory(bulkCategoryVal)}>Go</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkCategory(bulkCategoryVal)}>Go</button>
                   </div>
 
                   {/* Department reassignment (Admin only) */}
                   {currentRole === 'Super Admin' && (
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <select
-                        className="form-input"
-                        style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                        className="form-input form-input-sm"
+                        style={{ width: '130px'}}
                         value={bulkDeptVal}
                         onChange={e => setBulkDeptVal(e.target.value)}
                       >
@@ -1368,15 +1363,15 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                           <option key={d} value={d}>{d}</option>
                         ))}
                       </select>
-                      <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleBulkDepartment(bulkDeptVal)}>Go</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleBulkDepartment(bulkDeptVal)}>Go</button>
                     </div>
                   )}
 
                   {/* Assign custodian */}
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <select
-                      className="form-input"
-                      style={{ padding: '4px 8px', fontSize: '12px', width: '140px' }}
+                      className="form-input form-input-sm"
+                      style={{ width: '140px'}}
                       value={bulkAssignVal}
                       onChange={e => setBulkAssignVal(e.target.value)}
                     >
@@ -1385,11 +1380,11 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <option key={u.id} value={u.id}>{u.name || u.username}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleBulkAssign(bulkAssignVal)}>Go</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkAssign(bulkAssignVal)}>Go</button>
                   </div>
 
                   {/* Bulk delete */}
-                  <button className="btn btn-danger" style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleBulkDelete}>
+                  <button className="btn btn-danger btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px'}} onClick={handleBulkDelete}>
                     <Trash2 size={13} />
                     Delete
                   </button>
@@ -1656,8 +1651,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                       
                       <button
                         type="button"
-                        className="btn btn-secondary"
-                        style={{ width: '100%', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'}}
                         onClick={handleAutoAssignTicket}
                       >
                         <Users size={14} />

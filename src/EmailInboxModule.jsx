@@ -116,8 +116,8 @@ const EmailInboxModule = ({
     <div className="filters-row" style={{ marginBottom: '12px' }}>
       <div className="filters-left">
         <button
-          className="btn btn-secondary"
-          style={{ minHeight: '32px', padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+          className="btn btn-secondary btn-sm"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px'}}
           onClick={allSelected ? onClear : onSelectAll}
         >
           {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
@@ -159,8 +159,7 @@ const EmailInboxModule = ({
               onSelectAll={() => setSelectedEmails(allEmailIds)}
               onClear={() => setSelectedEmails([])}
             >
-              <button className="btn btn-danger" style={{ minHeight: '32px', padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => deleteEmails(selectedEmails)} disabled={busy}>
+              <button className="btn btn-danger btn-sm" onClick={() => deleteEmails(selectedEmails)} disabled={busy}>
                 <Trash2 size={13} /> Delete selected
               </button>
             </BulkBar>
@@ -240,16 +239,13 @@ const EmailInboxModule = ({
               onSelectAll={() => setSelectedNotifs(allNotifIds)}
               onClear={() => setSelectedNotifs([])}
             >
-              <button className="btn btn-secondary" style={{ minHeight: '32px', padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => markNotifs(selectedNotifs, true)} disabled={busy}>
+              <button className="btn btn-secondary btn-sm" onClick={() => markNotifs(selectedNotifs, true)} disabled={busy}>
                 <CheckCheck size={13} /> Mark read
               </button>
-              <button className="btn btn-secondary" style={{ minHeight: '32px', padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => markNotifs(selectedNotifs, false)} disabled={busy}>
+              <button className="btn btn-secondary btn-sm" onClick={() => markNotifs(selectedNotifs, false)} disabled={busy}>
                 <Circle size={13} /> Mark unread
               </button>
-              <button className="btn btn-danger" style={{ minHeight: '32px', padding: '6px 12px', fontSize: '12px' }}
-                      onClick={() => deleteNotifs(selectedNotifs)} disabled={busy}>
+              <button className="btn btn-danger btn-sm" onClick={() => deleteNotifs(selectedNotifs)} disabled={busy}>
                 <Trash2 size={13} /> Delete
               </button>
             </BulkBar>

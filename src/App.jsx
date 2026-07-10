@@ -499,15 +499,15 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
         <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
             {/* Search Input - Prominent */}
-            <div style={{ position: 'relative', flexGrow: 1, minWidth: 'min(280px, 100%)' }}>
-              <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-              <input 
-                type="text" 
-                placeholder="Search employees by ID, name, email, phone, designation…" 
-                className="form-input" 
-                value={searchTerm} 
-                onChange={e => setSearchTerm(e.target.value)} 
-                style={{ paddingLeft: '40px', height: '42px', fontSize: '14px', borderRadius: 'var(--radius-lg)', border: '2px solid var(--border-color)', background: 'var(--bg-sidebar)', transition: 'border-color 0.2s' }}
+            <div className="search-field" style={{ flexGrow: 1, minWidth: 'min(280px, 100%)' }}>
+              <Search size={16} className="search-field-icon" />
+              <input
+                type="text"
+                placeholder="Search employees by ID, name, email, phone, designation…"
+                className="form-input"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+
               />
             </div>
 
@@ -553,8 +553,8 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                   )}
                   <button 
                     onClick={() => { setSearchTerm(''); setFilterRole('All'); setFilterStatus('All'); }}
-                    className="btn btn-secondary" 
-                    style={{ padding: '4px 12px', fontSize: '11px', fontWeight: '600', borderRadius: '99px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    className="btn btn-secondary btn-sm" 
+                    style={{ fontWeight: '600', borderRadius: '99px', display: 'flex', alignItems: 'center', gap: '4px'}}
                   >
                     ✕ Clear All
                   </button>
@@ -571,13 +571,13 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
               {selectedUserIds.length} user{selectedUserIds.length > 1 ? 's' : ''} selected
             </span>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleBulkStatusChange('Active')}>Activate</button>
-              <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleBulkStatusChange('Inactive')}>Deactivate</button>
-              <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleBulkResetPassword}>Reset Pass</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => handleBulkStatusChange('Active')}>Activate</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => handleBulkStatusChange('Inactive')}>Deactivate</button>
+              <button className="btn btn-secondary btn-sm" onClick={handleBulkResetPassword}>Reset Pass</button>
               
               {/* Bulk Dept */}
               <div style={{ position: 'relative', display: 'inline-block' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShowBulkDept(!showBulkDept)}>Dept ▾</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkDept(!showBulkDept)}>Dept ▾</button>
                 {showBulkDept && (
                   <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                     <CustomSelect 
@@ -585,14 +585,14 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                       value={bulkDeptValue} 
                       onChange={e => setBulkDeptValue(e.target.value)}
                     />
-                    <button className="btn btn-primary" style={{ padding: '4px', fontSize: '11px' }} onClick={handleBulkDeptChange}>Apply</button>
+                    <button className="btn btn-primary btn-sm" onClick={handleBulkDeptChange}>Apply</button>
                   </div>
                 )}
               </div>
 
               {/* Bulk Role */}
               <div style={{ position: 'relative', display: 'inline-block' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShowBulkRole(!showBulkRole)}>Role ▾</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkRole(!showBulkRole)}>Role ▾</button>
                 {showBulkRole && (
                   <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                     <CustomSelect 
@@ -600,13 +600,13 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                       value={bulkRoleValue} 
                       onChange={e => setBulkRoleValue(e.target.value)}
                     />
-                    <button className="btn btn-primary" style={{ padding: '4px', fontSize: '11px' }} onClick={handleBulkRoleChange}>Apply</button>
+                    <button className="btn btn-primary btn-sm" onClick={handleBulkRoleChange}>Apply</button>
                   </div>
                 )}
               </div>
 
-              <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={handleExportSelected}>Export CSV</button>
-              <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--status-disposed)' }} onClick={handleBulkDelete}>Delete</button>
+              <button className="btn btn-secondary btn-sm" onClick={handleExportSelected}>Export CSV</button>
+              <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-disposed)'}} onClick={handleBulkDelete}>Delete</button>
             </div>
           </div>
         )}
@@ -703,8 +703,8 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
             </span>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button 
-                className="btn btn-secondary" 
-                style={{ padding: '6px 10px', display: 'flex', alignItems: 'center' }} 
+                className="btn btn-secondary btn-sm" 
+                style={{ display: 'flex', alignItems: 'center'}} 
                 disabled={currentPage === 1} 
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               >
@@ -721,8 +721,8 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                 </button>
               ))}
               <button 
-                className="btn btn-secondary" 
-                style={{ padding: '6px 10px', display: 'flex', alignItems: 'center' }} 
+                className="btn btn-secondary btn-sm" 
+                style={{ display: 'flex', alignItems: 'center'}} 
                 disabled={currentPage === totalPages} 
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               >
@@ -3701,10 +3701,7 @@ function App() {
                         {selectedNotificationIds.length} selected
                       </span>
                       <button
-                        className="btn btn-danger"
-                        style={{ minHeight: '28px', padding: '4px 10px', fontSize: '11.5px' }}
-                        onClick={handleBulkDeleteNotifications}
-                        disabled={isDeletingNotifications}
+                        className="btn btn-danger btn-sm" onClick={handleBulkDeleteNotifications} disabled={isDeletingNotifications}
                       >
                         <Trash2 size={12} /> Delete selected
                       </button>
@@ -3869,7 +3866,7 @@ function App() {
                             <span className="item-subtitle">{expiringAMCsCount} due for renewal this month</span>
                           </div>
                         </div>
-                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => navigate('amc')}>Renew</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => navigate('amc')}>Renew</button>
                       </div>
                     )}
 
@@ -3882,7 +3879,7 @@ function App() {
                             <span className="item-subtitle">{pendingPaymentsCount} await settlement</span>
                           </div>
                         </div>
-                        <button className="btn btn-secondary" style={{ padding: '3px 8px', fontSize: '10px' }} onClick={() => navigate('finance')}>Settle</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => navigate('finance')}>Settle</button>
                       </div>
                     )}
 
@@ -3998,13 +3995,13 @@ function App() {
                     {selectedAssetIds.length} asset{selectedAssetIds.length > 1 ? 's' : ''} selected
                   </span>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleBulkAssetStatusChange('Available')}>Mark Available</button>
-                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleBulkAssetStatusChange('Under Maintenance')}>Mark Maintenance</button>
-                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleBulkAssetStatusChange('Disposed')}>Mark Disposed</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkAssetStatusChange('Available')}>Mark Available</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkAssetStatusChange('Under Maintenance')}>Mark Maintenance</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkAssetStatusChange('Disposed')}>Mark Disposed</button>
                     
                     {/* Bulk Category */}
                     <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShowBulkAssetCategory(!showBulkAssetCategory)}>Category ▾</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkAssetCategory(!showBulkAssetCategory)}>Category ▾</button>
                       {showBulkAssetCategory && (
                         <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                           <CustomSelect 
@@ -4012,32 +4009,32 @@ function App() {
                             value={bulkAssetCategoryValue} 
                             onChange={e => setBulkAssetCategoryValue(e.target.value)}
                           />
-                          <button className="btn btn-primary" style={{ padding: '4px', fontSize: '11px' }} onClick={handleBulkAssetCategoryChange}>Apply</button>
+                          <button className="btn btn-primary btn-sm" onClick={handleBulkAssetCategoryChange}>Apply</button>
                         </div>
                       )}
                     </div>
 
                     {/* Bulk Location */}
                     <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShowBulkAssetLocation(!showBulkAssetLocation)}>Location ▾</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkAssetLocation(!showBulkAssetLocation)}>Location ▾</button>
                       {showBulkAssetLocation && (
                         <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '200px', marginBottom: '4px' }}>
                           <input 
                             type="text" 
-                            className="form-input" 
+                            className="form-input form-input-sm" 
                             placeholder="Enter location..." 
                             value={bulkAssetLocationValue} 
                             onChange={e => setBulkAssetLocationValue(e.target.value)} 
-                            style={{ height: '32px', fontSize: '12px', marginBottom: '4px' }}
+                            style={{ height: '32px', marginBottom: '4px'}}
                           />
-                          <button className="btn btn-primary" style={{ padding: '4px', fontSize: '11px' }} onClick={handleBulkAssetLocationChange}>Apply</button>
+                          <button className="btn btn-primary btn-sm" onClick={handleBulkAssetLocationChange}>Apply</button>
                         </div>
                       )}
                     </div>
 
                     {/* Bulk Dept */}
                     <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setShowBulkAssetDept(!showBulkAssetDept)}>Dept ▾</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkAssetDept(!showBulkAssetDept)}>Dept ▾</button>
                       {showBulkAssetDept && (
                         <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                           <CustomSelect 
@@ -4045,12 +4042,12 @@ function App() {
                             value={bulkAssetDeptValue} 
                             onChange={e => setBulkAssetDeptValue(e.target.value)}
                           />
-                          <button className="btn btn-primary" style={{ padding: '4px', fontSize: '11px' }} onClick={handleBulkAssetDeptChange}>Apply</button>
+                          <button className="btn btn-primary btn-sm" onClick={handleBulkAssetDeptChange}>Apply</button>
                         </div>
                       )}
                     </div>
 
-                    <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--status-disposed)' }} onClick={handleBulkDeleteAssets}>Delete</button>
+                    <button className="btn btn-secondary btn-sm" style={{ color: 'var(--status-disposed)'}} onClick={handleBulkDeleteAssets}>Delete</button>
                   </div>
                 </div>
               )}
@@ -4628,12 +4625,12 @@ function App() {
                           <h4 style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>Record Maintenance Visit</h4>
                           <form onSubmit={(e) => handleAddAMCServiceRecord(e, amc.id)} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <input type="date" name="date" className="form-input" style={{ padding: '6px 10px', fontSize: '12px' }} required />
-                              <input type="text" name="type" placeholder="Service action title" className="form-input" style={{ padding: '6px 10px', fontSize: '12px', flexGrow: 1 }} required />
+                              <input type="date" name="date" className="form-input form-input-sm" required />
+                              <input type="text" name="type" placeholder="Service action title" className="form-input form-input-sm" style={{ flexGrow: 1}} required />
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <input type="text" name="notes" placeholder="Technician diagnosis summary" className="form-input" style={{ padding: '6px 10px', fontSize: '12px', flexGrow: 1 }} required />
-                              <button type="submit" className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>Save Log</button>
+                              <input type="text" name="notes" placeholder="Technician diagnosis summary" className="form-input form-input-sm" style={{ flexGrow: 1}} required />
+                              <button type="submit" className="btn btn-secondary btn-sm" >Save Log</button>
                             </div>
                           </form>
                         </div>
@@ -4808,15 +4805,15 @@ function App() {
                           <div className="card" style={{ padding: '16px', margin: '20px 0 16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: 'min(280px, 100%)', flexWrap: 'wrap', alignItems: 'center' }}>
                               {/* Search */}
-                              <div style={{ position: 'relative', width: 'min(250px, 100%)' }}>
-                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                <input 
-                                  type="text" 
-                                  placeholder="Search invoices..." 
-                                  className="form-input" 
-                                  value={invoiceSearchTerm} 
-                                  onChange={e => { setInvoiceSearchTerm(e.target.value); setInvoiceCurrentPage(1); }} 
-                                  style={{ paddingLeft: '36px', height: '38px' }}
+                              <div className="search-field" style={{ width: 'min(250px, 100%)' }}>
+                                <Search size={16} className="search-field-icon" />
+                                <input
+                                  type="text"
+                                  placeholder="Search invoices..."
+                                  className="form-input"
+                                  value={invoiceSearchTerm}
+                                  onChange={e => { setInvoiceSearchTerm(e.target.value); setInvoiceCurrentPage(1); }}
+
                                 />
                               </div>
                               
@@ -5017,8 +5014,8 @@ function App() {
                                                 href={`/api/files/${inv.fileName}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer" 
-                                                className="btn btn-secondary" 
-                                                style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                                className="btn btn-secondary btn-sm" 
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px'}}
                                               >
                                                 📄 PDF
                                               </a>
@@ -5057,11 +5054,7 @@ function App() {
                             </div>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                               <button 
-                                className="btn btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '12px' }}
-                                disabled={invoiceCurrentPage === 1}
-                                onClick={() => setInvoiceCurrentPage(prev => Math.max(1, prev - 1))}
-                                type="button"
+                                className="btn btn-secondary btn-sm" disabled={invoiceCurrentPage === 1} onClick={() => setInvoiceCurrentPage(prev => Math.max(1, prev - 1))} type="button"
                               >
                                 Previous
                               </button>
@@ -5069,11 +5062,7 @@ function App() {
                                 Page {invoiceCurrentPage} of {totalInvoicePages}
                               </span>
                               <button 
-                                className="btn btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '12px' }}
-                                disabled={invoiceCurrentPage === totalInvoicePages}
-                                onClick={() => setInvoiceCurrentPage(prev => Math.min(totalInvoicePages, prev + 1))}
-                                type="button"
+                                className="btn btn-secondary btn-sm" disabled={invoiceCurrentPage === totalInvoicePages} onClick={() => setInvoiceCurrentPage(prev => Math.min(totalInvoicePages, prev + 1))} type="button"
                               >
                                 Next
                               </button>
@@ -5087,15 +5076,15 @@ function App() {
                   {financeSubTab === 'pending_upload' && (
                     <>
                       <div className="card" style={{ padding: '16px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: 'min(280px, 100%)', maxWidth: '500px', position: 'relative' }}>
-                          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                          <input 
-                            type="text" 
-                            placeholder="Search pending uploads by ID, PO or vendor..." 
-                            className="form-input" 
-                            value={invoicePdfSearchTerm} 
-                            onChange={e => setInvoicePdfSearchTerm(e.target.value)} 
-                            style={{ paddingLeft: '36px' }}
+                        <div className="search-field" style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: 'min(280px, 100%)', maxWidth: '500px' }}>
+                          <Search size={16} className="search-field-icon" />
+                          <input
+                            type="text"
+                            placeholder="Search pending uploads by ID, PO or vendor..."
+                            className="form-input"
+                            value={invoicePdfSearchTerm}
+                            onChange={e => setInvoicePdfSearchTerm(e.target.value)}
+
                           />
                         </div>
                       </div>
@@ -5225,8 +5214,8 @@ function App() {
                                   placeholder="Search assets by ID or name..." 
                                   value={mappingAssetSearch}
                                   onChange={e => setMappingAssetSearch(e.target.value)}
-                                  className="form-input"
-                                  style={{ flexGrow: 1, fontSize: '12.5px', height: '36px' }}
+                                  className="form-input form-input-sm"
+                                  style={{ flexGrow: 1, height: '36px'}}
                                 />
                                 <CustomSelect
                                   options={[
@@ -6646,8 +6635,8 @@ function App() {
                         href={`/api/files/${invoiceDetailModal.fileName}`} 
                         target="_blank" 
                         rel="noopener noreferrer" 
-                        className="btn btn-secondary" 
-                        style={{ padding: '2px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        className="btn btn-secondary btn-sm" 
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px'}}
                       >
                         📄 View PDF Scan
                       </a>
