@@ -11,6 +11,7 @@ const storage = require('./storage');
 const notifications = require('./notifications');
 const scheduler = require('./notifications/scheduler');
 const { registerCronRoutes } = require('./cronRoutes');
+const permissionModel = require('./permissionModel');
 const knowledgeBase = require('./knowledgeBase');
 const purchaseOrders = require('./purchaseOrders');
 
@@ -838,7 +839,7 @@ app.get('/api/documents', async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   try {
-    if (!(await roleAllows(user.role, 'viewDocuments'))) {
+    if (!(await roleAllows(user.role, 'documents', 'view'))) {
       return res.status(403).json({ error: 'Your role is not permitted to view the Document Repository.' });
     }
     const result = await db.query('SELECT * FROM documents ORDER BY created_at DESC');
@@ -853,7 +854,7 @@ app.post('/api/documents', async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   try {
-    if (!(await roleAllows(user.role, 'viewDocuments'))) {
+    if (!(await roleAllows(user.role, 'documents', 'create'))) {
       return res.status(403).json({ error: 'Your role is not permitted to add documents.' });
     }
     const { name, type, size, uploadDate, association, fileUrl } = req.body;
@@ -1115,18 +1116,25 @@ const loadRolePermissions = async ({ fresh = false } = {}) => {
   return rolePermissionsCache;
 };
 
-// Super Admin is unconditionally allowed; every other role is governed by the matrix.
-const roleAllows = async (role, permission) => {
-  if (role === 'Super Admin') return true;
+// Granular check against the module -> verb matrix. Super Admin is unconditional.
+// This is the single backend gate; Pass 2 threads it through every mutating endpoint.
+const roleAllows = async (role, moduleKey, verb) => {
   const matrix = await loadRolePermissions();
-  return Boolean(matrix[role] && matrix[role][permission]);
+  return permissionModel.can(matrix, role, moduleKey, verb);
 };
 
 app.get('/api/role-permissions', async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   try {
-    res.json(await loadRolePermissions({ fresh: true }));
+    // Ship the vocabulary alongside the data so the client renders the matrix
+    // generically and can never disagree with the server about modules/verbs/roles.
+    res.json({
+      modules: permissionModel.MODULES,
+      roles: permissionModel.ROLES,
+      verbLabels: permissionModel.VERB_LABELS,
+      matrix: await loadRolePermissions({ fresh: true })
+    });
   } catch (err) {
     console.error('GET /api/role-permissions failed:', err);
     res.status(500).json({ error: 'Could not load role permissions: ' + err.message });
@@ -1139,21 +1147,27 @@ app.patch('/api/role-permissions', async (req, res) => {
   if (user.role !== 'Super Admin') {
     return res.status(403).json({ error: 'Only Super Admins can change role permissions.' });
   }
-  // { role: { permKey: bool, ... }, ... } — merged over what exists, so a partial
-  // payload (one toggle) does not wipe the rest of a role's flags.
-  const updates = req.body && typeof req.body === 'object' ? req.body : null;
-  if (!updates) return res.status(400).json({ error: 'Payload must be a { role: permissions } object' });
+  // The editor sends the complete { role: { module: { verb: bool } } } matrix, so
+  // each role is replaced wholesale after sanitising. A shallow JSONB `||` merge would
+  // clobber sibling verbs (sending { tickets: { view:false } } would drop create/edit);
+  // sanitizeMatrix also strips any unknown role/module/verb a client might inject.
+  const matrixInput = req.body && (req.body.matrix || req.body);
+  const clean = permissionModel.sanitizeMatrix(matrixInput);
+  if (Object.keys(clean).length === 0) {
+    return res.status(400).json({ error: 'Payload must be a { role: { module: { verb: bool } } } matrix' });
+  }
 
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    for (const [role, perms] of Object.entries(updates)) {
-      if (role === 'Super Admin' || !perms || typeof perms !== 'object') continue;
+    for (const [role, perms] of Object.entries(clean)) {
+      // Super Admin is unrestricted in code; storing its row would be misleading.
+      if (role === 'Super Admin') continue;
       await client.query(
         `INSERT INTO role_permissions (role, permissions, updated_at)
          VALUES ($1, $2::jsonb, NOW())
          ON CONFLICT (role) DO UPDATE
-           SET permissions = role_permissions.permissions || $2::jsonb, updated_at = NOW()`,
+           SET permissions = EXCLUDED.permissions, updated_at = NOW()`,
         [role, JSON.stringify(perms)]
       );
     }
@@ -1163,12 +1177,12 @@ app.patch('/api/role-permissions', async (req, res) => {
     // Timestamped: every permissions edit is its own event, never deduplicated away.
     notifications.notify('security.permissions_changed', `permissions-changed:${Date.now()}`, {
       actor: user.name || user.username,
-      summary: Object.keys(updates).join(', ')
+      summary: Object.keys(clean).join(', ')
     });
 
     await db.query(
       `INSERT INTO system_logs (actor, action, detail) VALUES ($1,'Role Permissions',$2)`,
-      [user.name || user.username, `Updated: ${Object.keys(updates).join(', ')}`]
+      [user.name || user.username, `Updated: ${Object.keys(clean).join(', ')}`]
     );
     res.json(await loadRolePermissions({ fresh: true }));
   } catch (err) {

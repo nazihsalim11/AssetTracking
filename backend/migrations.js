@@ -1,4 +1,5 @@
 const db = require('./db');
+const permissionModel = require('./permissionModel');
 
 const runMigrations = async () => {
   console.log('Running database migrations...');
@@ -563,6 +564,37 @@ const runMigrations = async () => {
         ON notification_recipients (event_type, user_id) WHERE role IS NULL;
       CREATE INDEX IF NOT EXISTS notification_recipients_event_idx ON notification_recipients (event_type);
     `);
+
+    // ---- Roles & granular permission matrix ----
+    //
+    // Add the three requested roles that were missing. ADD VALUE IF NOT EXISTS is
+    // idempotent and, on PostgreSQL 12+, safe outside an explicit transaction, which
+    // is how directQuery runs each statement.
+    await db.directQuery(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Admin Team';`);
+    await db.directQuery(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'HR Team';`);
+    await db.directQuery(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Manager';`);
+
+    // The permission model changed shape: from nine flat asset flags to a nested
+    // module -> verb matrix. Convert any old-format row and seed any missing role,
+    // from the single source of truth in permissionModel. A row is "new format" once
+    // it has a top-level 'dashboard' object; anything else is old or absent and gets
+    // replaced with that role's default matrix. Custom edits to the old nine flags do
+    // not survive, because they have no meaning under the new module keys.
+    const defaults = permissionModel.buildDefaultMatrix();
+    const existing = await db.query('SELECT role, permissions FROM role_permissions');
+    const byRole = Object.fromEntries(existing.rows.map((r) => [r.role, r.permissions]));
+
+    for (const role of permissionModel.ROLES) {
+      const current = byRole[role.key];
+      const isNewFormat = current && typeof current === 'object' && current.dashboard && typeof current.dashboard === 'object';
+      if (isNewFormat) continue;
+      await db.directQuery(
+        `INSERT INTO role_permissions (role, permissions, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (role) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = NOW()`,
+        [role.key, JSON.stringify(defaults[role.key])]
+      );
+    }
 
     console.log('Database migrations completed successfully.');
   } catch (err) {
