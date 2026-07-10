@@ -2852,9 +2852,13 @@ select.form-input {
 
 .login-page-wrapper {
   display: flex;
+  /* #root is a row flex container, so this must grow explicitly — otherwise it
+     shrink-to-fits its content and centring resolves against that, not the viewport. */
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
-  align-items: center;
-  justify-content: center;
+  min-height: 100dvh;
   background-color: var(--bg-app);
   background-image: radial-gradient(60% 60% at 50% 0%, var(--primary-soft) 0%, transparent 70%);
   font-family: var(--font-sans);
@@ -2867,6 +2871,9 @@ select.form-input {
   gap: var(--sp-8);
   width: 100%;
   max-width: 420px;
+  /* Centres on both axes, and collapses to zero when the card is taller than the
+     viewport, so the top edge stays reachable instead of overflowing above it. */
+  margin: auto;
 }
 
 .login-spacer-left {
