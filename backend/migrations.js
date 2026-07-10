@@ -524,6 +524,46 @@ const runMigrations = async () => {
       ALTER TABLE system_logs ALTER COLUMN timestamp DROP NOT NULL;
     `);
 
+    // Per-event notification preferences.
+    //
+    // Nothing is seeded, and nothing defaults to "off": an event type with no row
+    // here behaves exactly as it did before this table existed — every globally
+    // enabled channel fires, to the built-in audience. Existing deployments keep
+    // their current behaviour until an admin changes something.
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS notification_preferences (
+        id SERIAL PRIMARY KEY,
+        event_type VARCHAR(60) NOT NULL,
+        channel VARCHAR(20) NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        -- Severity floor for the whole event; only ticket events carry a priority.
+        min_priority VARCHAR(20),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT notification_preferences_channel_chk CHECK (channel IN ('in_app', 'email', 'sms')),
+        CONSTRAINT notification_preferences_priority_chk CHECK (min_priority IS NULL OR min_priority IN ('Low', 'Medium', 'Critical')),
+        CONSTRAINT notification_preferences_unique UNIQUE (event_type, channel)
+      );
+    `);
+
+    // Who hears about each event. No rows for an event means "use the built-in
+    // audience" — treating an empty table as "tell nobody" would silence every
+    // notification in the system the moment this migration ran.
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS notification_recipients (
+        id SERIAL PRIMARY KEY,
+        event_type VARCHAR(60) NOT NULL,
+        role VARCHAR(50),
+        user_id INT REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT notification_recipients_target_chk CHECK (role IS NOT NULL OR user_id IS NOT NULL)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS notification_recipients_role_idx
+        ON notification_recipients (event_type, role) WHERE user_id IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS notification_recipients_user_idx
+        ON notification_recipients (event_type, user_id) WHERE role IS NULL;
+      CREATE INDEX IF NOT EXISTS notification_recipients_event_idx ON notification_recipients (event_type);
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

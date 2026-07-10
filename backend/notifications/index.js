@@ -22,6 +22,7 @@ const db = require('../db');
 const templates = require('./templates');
 const emailChannel = require('./channels/email');
 const smsChannel = require('./channels/sms');
+const policy = require('../notificationPolicy');
 
 const MAX_ATTEMPTS = 3;
 const CHANNELS = { email: emailChannel, sms: smsChannel };
@@ -47,7 +48,46 @@ async function getSettings({ fresh = false } = {}) {
 
 function invalidateSettingsCache() {
   settingsCache = null;
+  prefsCache = null;
+  recipientsCache = null;
 }
+
+/* -------------------------------------------------- per-event preferences */
+
+let prefsCache = null;
+let recipientsCache = null;
+let prefsCachedAt = 0;
+
+/**
+ * Per-event channel switches and severity floors, plus the configured audience.
+ *
+ * Both tables are read together and cached on the same TTL as the global settings,
+ * because dispatch() needs all three on every event and a broadcast would otherwise
+ * make one round trip per recipient.
+ */
+async function getPolicy({ fresh = false } = {}) {
+  if (!fresh && prefsCache && Date.now() - prefsCachedAt < SETTINGS_TTL_MS) {
+    return { prefsByEvent: prefsCache, recipientRows: recipientsCache };
+  }
+
+  const [prefs, recipients] = await Promise.all([
+    db.query('SELECT event_type, channel, enabled, min_priority FROM notification_preferences'),
+    db.query('SELECT event_type, role, user_id FROM notification_recipients')
+  ]);
+
+  prefsCache = policy.indexPreferences(prefs.rows);
+  recipientsCache = recipients.rows;
+  prefsCachedAt = Date.now();
+  return { prefsByEvent: prefsCache, recipientRows: recipientsCache };
+}
+
+function invalidatePolicyCache() {
+  prefsCache = null;
+  recipientsCache = null;
+}
+
+/** Every active user, for resolving configured roles and ids to people. */
+const allActiveUsers = () => activeUsers('TRUE', []);
 
 /** Channels the admin has switched on *and* that have a working provider. */
 async function activeChannels() {
@@ -175,9 +215,26 @@ async function resolveRecipients(eventType, ctx) {
  * @returns {{queued: number, deliveryIds: number[]}}
  */
 async function dispatch(eventType, eventKey, ctx) {
+  const globals = await activeChannels();
+  const { prefsByEvent, recipientRows } = await getPolicy();
+
+  // Cheapest gate first: an event below its severity floor, or with every channel
+  // switched off, never renders a template or touches the users table.
+  if (policy.isEventSuppressed(prefsByEvent, eventType, ctx, globals)) {
+    console.log(`[notifications] ${eventType} (${eventKey}) suppressed by preferences`);
+    return { queued: 0, deliveryIds: [] };
+  }
+
   const message = templates.render(eventType, ctx);
-  const recipients = await resolveRecipients(eventType, ctx);
-  const enabled = await activeChannels();
+  const enabled = policy.enabledChannelsFor(prefsByEvent, eventType, globals);
+
+  const hasConfiguredAudience = recipientRows.some((r) => r.event_type === eventType);
+  const recipients = policy.resolveAudience({
+    eventType,
+    defaults: hasConfiguredAudience ? [] : await resolveRecipients(eventType, ctx),
+    configuredRows: recipientRows,
+    allUsers: hasConfiguredAudience ? await allActiveUsers() : []
+  });
 
   if (recipients.length === 0) {
     console.warn(`[notifications] ${eventType} (${eventKey}) has no active recipients`);
@@ -378,5 +435,7 @@ function channelStatus() {
 module.exports = {
   notify, dispatch, flush, retryFailed,
   getSettings, invalidateSettingsCache, channelStatus,
+  getPolicy, invalidatePolicyCache,
+  eventTypes: templates.eventTypes,
   MAX_ATTEMPTS
 };

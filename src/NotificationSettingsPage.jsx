@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Mail, MessageSquare, Bell, AlertCircle, CheckCircle2, Clock, MinusCircle } from 'lucide-react';
 import { api } from './api';
 import RelativeTime from './RelativeTime';
+import NotificationPreferences from './NotificationPreferences';
 
 const STATUS_STYLE = {
   Sent: { color: 'var(--status-available)', bg: 'var(--status-available-bg)', Icon: CheckCircle2 },
@@ -182,6 +183,8 @@ const NotificationSettingsPage = ({ addToast, currentRole }) => {
           </p>
         )}
       </div>
+
+      <NotificationPreferences addToast={addToast} currentRole={currentRole} />
 
       {/* Schedules */}
       <div className="card">

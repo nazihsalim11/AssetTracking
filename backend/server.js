@@ -1203,6 +1203,97 @@ app.patch('/api/notification-settings', async (req, res) => {
   }
 });
 
+// Per-event notification preferences: which channels fire for which event, the
+// severity floor, and who hears about it.
+//
+// An event type absent from `preferences` behaves as it always did: every globally
+// enabled channel, to the built-in audience. Absence is never "off".
+app.get('/api/notification-preferences', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  try {
+    const [prefs, recipients, roles] = await Promise.all([
+      db.query('SELECT event_type, channel, enabled, min_priority FROM notification_preferences ORDER BY event_type, channel'),
+      db.query('SELECT event_type, role, user_id FROM notification_recipients ORDER BY event_type'),
+      db.query(`SELECT id, name, username, role FROM users WHERE status = 'Active' ORDER BY name NULLS LAST, username`)
+    ]);
+    res.json({
+      eventTypes: notifications.eventTypes,
+      preferences: prefs.rows,
+      recipients: recipients.rows,
+      users: roles.rows
+    });
+  } catch (err) {
+    console.error('GET /api/notification-preferences failed:', err);
+    res.status(500).json({ error: 'Could not load notification preferences: ' + err.message });
+  }
+});
+
+// Replace the whole configuration in one transaction. A partial write here would
+// leave some events routed to nobody, which is silent and therefore worse than a
+// failed request.
+app.put('/api/notification-preferences', async (req, res) => {
+  const user = requireSuperAdmin(req, res);
+  if (!user) return;
+
+  const { preferences = [], recipients = [] } = req.body || {};
+  if (!Array.isArray(preferences) || !Array.isArray(recipients)) {
+    return res.status(400).json({ error: 'preferences and recipients must be arrays' });
+  }
+
+  const validEvents = new Set(notifications.eventTypes);
+  const validChannels = new Set(['in_app', 'email', 'sms']);
+  const validPriorities = new Set(['Low', 'Medium', 'Critical']);
+
+  for (const p of preferences) {
+    if (!validEvents.has(p.eventType)) return res.status(400).json({ error: `Unknown event type: ${p.eventType}` });
+    if (!validChannels.has(p.channel)) return res.status(400).json({ error: `Unknown channel: ${p.channel}` });
+    if (p.minPriority != null && !validPriorities.has(p.minPriority)) {
+      return res.status(400).json({ error: `Unknown priority: ${p.minPriority}` });
+    }
+  }
+  for (const r of recipients) {
+    if (!validEvents.has(r.eventType)) return res.status(400).json({ error: `Unknown event type: ${r.eventType}` });
+    if (!r.role && r.userId == null) return res.status(400).json({ error: 'A recipient needs a role or a userId' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM notification_preferences');
+    await client.query('DELETE FROM notification_recipients');
+
+    for (const p of preferences) {
+      await client.query(
+        `INSERT INTO notification_preferences (event_type, channel, enabled, min_priority)
+         VALUES ($1, $2, $3, $4)`,
+        [p.eventType, p.channel, p.enabled !== false, p.minPriority || null]
+      );
+    }
+    for (const r of recipients) {
+      await client.query(
+        `INSERT INTO notification_recipients (event_type, role, user_id) VALUES ($1, $2, $3)`,
+        [r.eventType, r.role || null, r.userId ?? null]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO system_logs (actor, action, detail) VALUES ($1, 'Notification Preferences', $2)`,
+      [user.name || user.username, `Updated ${preferences.length} preference(s), ${recipients.length} recipient rule(s)`]
+    );
+
+    await client.query('COMMIT');
+    notifications.invalidatePolicyCache();
+    res.json({ ok: true, preferences: preferences.length, recipients: recipients.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /api/notification-preferences failed:', err);
+    res.status(500).json({ error: 'Could not save notification preferences: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Delivery audit log. Every attempt on every channel, with its status.
 app.get('/api/notification-history', async (req, res) => {
   const user = requireUser(req, res);

@@ -217,6 +217,8 @@ export const api = {
     return apiFetch(`/notification-history${qs ? `?${qs}` : ''}`);
   },
   retryFailedNotifications: () => apiFetch('/notifications/retry-failed', { method: 'POST' }),
+  getNotificationPreferences: () => apiFetch('/notification-preferences'),
+  updateNotificationPreferences: (payload) => apiFetch('/notification-preferences', { method: 'PUT', body: JSON.stringify(payload) }),
 
   // Department options, derived from the directory.
   getDepartments: () => apiFetch('/departments'),
