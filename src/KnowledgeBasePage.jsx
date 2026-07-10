@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import CustomSelect from './CustomSelect';
 import {
   Search, BookOpen, Plus, Edit2, Trash2, ArrowLeft, Eye, HelpCircle,
   FileText, Paperclip, Send, EyeOff, Save, X
@@ -81,10 +82,12 @@ const ArticleEditor = ({ article, categories, allArticles, onSave, onCancel, add
         </div>
         <div className="form-group">
           <label className="form-label">Category</label>
-          <select className="form-input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">Uncategorised</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <CustomSelect
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            placeholder="Uncategorised"
+            options={[{ value: '', label: 'Uncategorised' }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
+          />
         </div>
         <div className="form-group">
           <label className="form-label">Options</label>
@@ -386,10 +389,13 @@ const KnowledgeBasePage = ({ currentRole, addToast }) => {
         <div className="filters-row" style={{ marginTop: '12px' }}>
           <div className="filters-left">
             <span>Category</span>
-            <select className="filter-select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">All categories</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.article_count})</option>)}
-            </select>
+            <CustomSelect
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              placeholder="All categories"
+              style={{ minWidth: '180px' }}
+              options={[{ value: '', label: 'All categories' }, ...categories.map((c) => ({ value: c.id, label: `${c.name} (${c.article_count})` }))]}
+            />
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', cursor: 'pointer' }}>
               <input type="checkbox" checked={faqOnly} onChange={(e) => setFaqOnly(e.target.checked)} /> FAQs only
             </label>

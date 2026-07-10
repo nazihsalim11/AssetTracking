@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import CustomSelect from './CustomSelect';
 import {
   Plus, Search, Edit2, Trash2, X, Save, FileText, Paperclip,
   ArrowUp, ArrowDown, ShoppingCart, Download
@@ -102,15 +103,11 @@ const PoEditor = ({ po, options, invoices, amcs, onSave, onCancel, addToast }) =
         </div>
         <div className="form-group">
           <label className="form-label">Status</label>
-          <select className="form-input" value={form.status} onChange={set('status')}>
-            {options.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <CustomSelect value={form.status} onChange={set('status')} options={options.statuses} />
         </div>
         <div className="form-group">
           <label className="form-label">Currency</label>
-          <select className="form-input" value={form.currency} onChange={set('currency')}>
-            {options.currencies.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <CustomSelect value={form.currency} onChange={set('currency')} options={options.currencies} />
         </div>
         <div className="form-group">
           <label className="form-label">Amount</label>
@@ -118,17 +115,23 @@ const PoEditor = ({ po, options, invoices, amcs, onSave, onCancel, addToast }) =
         </div>
         <div className="form-group">
           <label className="form-label">Link Invoice (optional)</label>
-          <select className="form-input" value={form.invoiceId} onChange={set('invoiceId')}>
-            <option value="">Not linked</option>
-            {invoices.map((i) => <option key={i.id} value={i.id}>{i.id} — {i.vendor}</option>)}
-          </select>
+          <CustomSelect
+            value={form.invoiceId}
+            onChange={set('invoiceId')}
+            placeholder="Not linked"
+            searchable
+            options={[{ value: '', label: 'Not linked' }, ...invoices.map((i) => ({ value: i.id, label: `${i.id} — ${i.vendor}` }))]}
+          />
         </div>
         <div className="form-group">
           <label className="form-label">Link AMC (optional)</label>
-          <select className="form-input" value={form.amcId} onChange={set('amcId')}>
-            <option value="">Not linked</option>
-            {amcs.map((m) => <option key={m.id} value={m.id}>{m.id} — {m.vendor}</option>)}
-          </select>
+          <CustomSelect
+            value={form.amcId}
+            onChange={set('amcId')}
+            placeholder="Not linked"
+            searchable
+            options={[{ value: '', label: 'Not linked' }, ...amcs.map((m) => ({ value: m.id, label: `${m.id} — ${m.vendor}` }))]}
+          />
         </div>
         <div className="form-group full-width">
           <label className="form-label">Notes</label>
@@ -282,10 +285,13 @@ const PurchaseOrdersPage = ({ currentRole, invoices = [], amcs = [], addToast })
                      value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
             <span>Status</span>
-            <select className="filter-select" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">All statuses</option>
-              {options.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <CustomSelect
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              placeholder="All statuses"
+              style={{ minWidth: '160px' }}
+              options={[{ value: '', label: 'All statuses' }, ...options.statuses.map((s) => ({ value: s, label: s }))]}
+            />
           </div>
         </div>
 

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Eye, MessageSquare, AlertCircle, Clock, ChevronDown, Check, 
+import {
+  Plus, Eye, MessageSquare, AlertCircle, Clock, ChevronDown, Check,
   Trash2, Send, Paperclip, ClipboardList, Info, FileText, CheckCircle2,
-  Users, User, UserCheck, AlertTriangle, Search, Filter, ArrowLeft, RefreshCw, BookOpen, Lightbulb, 
+  Users, User, UserCheck, AlertTriangle, Search, Filter, ArrowLeft, RefreshCw, BookOpen, Lightbulb,
   Layers, Building, ShieldCheck, Mail, Tag, HelpCircle
 } from 'lucide-react';
 import { api } from './api';
@@ -14,6 +14,7 @@ import FloatingBulkBar from './FloatingBulkBar';
 import Checkbox from './Checkbox';
 import RelativeTime from './RelativeTime';
 import { parseTimestamp } from './time';
+import CustomSelect from './CustomSelect';
 import AsyncBoundary from './AsyncBoundary';
 import { STATUS } from './asyncStatus';
 import { PageSkeleton } from './Skeleton';
@@ -517,7 +518,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
 
   const handleRowCheckbox = (id) => {
-    setSelectedTicketIds(prev => 
+    setSelectedTicketIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   };
@@ -578,7 +579,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
     // Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter(t => 
+      list = list.filter(t =>
         (t.ticketId && t.ticketId.toLowerCase().includes(q)) ||
         (t.subject && t.subject.toLowerCase().includes(q)) ||
         (t.description && t.description.toLowerCase().includes(q)) ||
@@ -659,7 +660,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
       skeleton={<PageSkeleton cards={4} rows={8} />}
     >
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
       {/* 1. Dashboard View (Ticketing Registry Queue) */}
       {!activeTicket && (
         <>
@@ -787,52 +788,34 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
               {/* Multi-select filter dropdowns */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                    <option value="">Status: All</option>
-                    {['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => (
-                      <option key={st} value={st}>{st}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    placeholder="Status: All"
+                    options={[{ value: '', label: 'Status: All' }, ...['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => ({ value: st, label: st }))]} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
-                    <option value="">Priority: All</option>
-                    {['Critical', 'Medium', 'Low'].map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
+                    placeholder="Priority: All"
+                    options={[{ value: '', label: 'Priority: All' }, ...['Critical', 'Medium', 'Low'].map(pr => ({ value: pr, label: pr }))]} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterDepartment} onChange={e => setFilterDepartment(e.target.value)}>
-                    <option value="">Department: All</option>
-                    {distinctDepartments.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterDepartment} onChange={e => setFilterDepartment(e.target.value)}
+                    placeholder="Department: All"
+                    options={[{ value: '', label: 'Department: All' }, ...distinctDepartments.map(d => ({ value: d, label: d }))]} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-                    <option value="">Category: All</option>
-                    {distinctCategories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                    placeholder="Category: All"
+                    options={[{ value: '', label: 'Category: All' }, ...distinctCategories.map(c => ({ value: c, label: c }))]} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
-                    <option value="">Assignee: All</option>
-                    {usersList.filter(u => u.role !== 'Employee').map(u => (
-                      <option key={u.id} value={u.id}>{u.name || u.username}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+                    placeholder="Assignee: All" searchable
+                    options={[{ value: '', label: 'Assignee: All' }, ...usersList.filter(u => u.role !== 'Employee').map(u => ({ value: u.id, label: u.name || u.username }))]} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <select className="form-input form-input-sm" value={filterRequester} onChange={e => setFilterRequester(e.target.value)}>
-                    <option value="">Requester: All</option>
-                    {distinctRequesters.map(req => (
-                      <option key={req} value={req}>{req}</option>
-                    ))}
-                  </select>
+                  <CustomSelect className="form-input-sm" value={filterRequester} onChange={e => setFilterRequester(e.target.value)}
+                    placeholder="Requester: All" searchable
+                    options={[{ value: '', label: 'Requester: All' }, ...distinctRequesters.map(rq => ({ value: rq, label: rq }))]} />
                 </div>
               </div>
             </div>
@@ -995,77 +978,32 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   <>
                   {/* Stage the fields; nothing is sent until Apply Changes. */}
                   <div className="action-row">
-                    <select
-                      className="form-input form-input-sm"
-                      style={{ width: '130px'}}
-                      value={bulkStatusVal}
-                      onChange={e => setBulkStatusVal(e.target.value)}
-                      disabled={isApplyingBulk}
-                      aria-label="Set status for the selected tickets"
-                    >
-                      <option value="">Status…</option>
-                      {['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => (
-                        <option key={st} value={st}>{st}</option>
-                      ))}
-                    </select>
+                    <CustomSelect className="form-input-sm" style={{ width: '130px' }}
+                      value={bulkStatusVal} onChange={e => setBulkStatusVal(e.target.value)} disabled={isApplyingBulk}
+                      placeholder="Status…"
+                      options={[{ value: '', label: 'Status…' }, ...['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => ({ value: st, label: st }))]} />
 
-                    <select
-                      className="form-input form-input-sm"
-                      style={{ width: '130px'}}
-                      value={bulkPriorityVal}
-                      onChange={e => setBulkPriorityVal(e.target.value)}
-                      disabled={isApplyingBulk}
-                      aria-label="Set priority for the selected tickets"
-                    >
-                      <option value="">Priority…</option>
-                      {['Critical', 'Medium', 'Low'].map(pr => (
-                        <option key={pr} value={pr}>{pr}</option>
-                      ))}
-                    </select>
+                    <CustomSelect className="form-input-sm" style={{ width: '130px' }}
+                      value={bulkPriorityVal} onChange={e => setBulkPriorityVal(e.target.value)} disabled={isApplyingBulk}
+                      placeholder="Priority…"
+                      options={[{ value: '', label: 'Priority…' }, ...['Critical', 'Medium', 'Low'].map(pr => ({ value: pr, label: pr }))]} />
 
-                    <select
-                      className="form-input form-input-sm"
-                      style={{ width: '130px'}}
-                      value={bulkCategoryVal}
-                      onChange={e => setBulkCategoryVal(e.target.value)}
-                      disabled={isApplyingBulk}
-                      aria-label="Set category for the selected tickets"
-                    >
-                      <option value="">Category…</option>
-                      {distinctCategories.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                    <CustomSelect className="form-input-sm" style={{ width: '130px' }}
+                      value={bulkCategoryVal} onChange={e => setBulkCategoryVal(e.target.value)} disabled={isApplyingBulk}
+                      placeholder="Category…"
+                      options={[{ value: '', label: 'Category…' }, ...distinctCategories.map(c => ({ value: c, label: c }))]} />
 
                     {currentRole === 'Super Admin' && (
-                      <select
-                        className="form-input form-input-sm"
-                        style={{ width: '130px'}}
-                        value={bulkDeptVal}
-                        onChange={e => setBulkDeptVal(e.target.value)}
-                        disabled={isApplyingBulk}
-                        aria-label="Reassign department for the selected tickets"
-                      >
-                        <option value="">Department…</option>
-                        {distinctDepartments.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
+                      <CustomSelect className="form-input-sm" style={{ width: '130px' }}
+                        value={bulkDeptVal} onChange={e => setBulkDeptVal(e.target.value)} disabled={isApplyingBulk}
+                        placeholder="Department…"
+                        options={[{ value: '', label: 'Department…' }, ...distinctDepartments.map(d => ({ value: d, label: d }))]} />
                     )}
 
-                    <select
-                      className="form-input form-input-sm"
-                      style={{ width: '140px'}}
-                      value={bulkAssignVal}
-                      onChange={e => setBulkAssignVal(e.target.value)}
-                      disabled={isApplyingBulk}
-                      aria-label="Assign the selected tickets to an agent"
-                    >
-                      <option value="">Assignee…</option>
-                      {usersList.filter(u => u.role !== 'Employee').map(u => (
-                        <option key={u.id} value={u.id}>{u.name || u.username}</option>
-                      ))}
-                    </select>
+                    <CustomSelect className="form-input-sm" style={{ width: '140px' }} searchable
+                      value={bulkAssignVal} onChange={e => setBulkAssignVal(e.target.value)} disabled={isApplyingBulk}
+                      placeholder="Assignee…"
+                      options={[{ value: '', label: 'Assignee…' }, ...usersList.filter(u => u.role !== 'Employee').map(u => ({ value: u.id, label: u.name || u.username }))]} />
                   </div>
 
                   {/* Review: exactly what Apply Changes will do. */}
@@ -1132,7 +1070,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
           </div>
 
           <div className="ticket-details-layout">
-            
+
             {/* Main workspace section */}
             <div className="ticket-activity-section">
               <div className="card" style={{ padding: '24px' }}>
@@ -1206,7 +1144,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
               {/* Chat Thread */}
               <div className="card" style={{ padding: '24px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '16px' }}>Communications & Thread History</h3>
-                
+
                 <div className="ticket-comments-container" style={{ marginBottom: '20px', background: 'var(--bg-sidebar)' }}>
                   {(!activeTicket.comments || activeTicket.comments.length === 0) ? (
                     <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
@@ -1216,10 +1154,10 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                     activeTicket.comments.map(c => {
                       const isCurrentUser = c.authorId === currentUser?.id || c.authorName === currentUser?.name;
                       return (
-                        <div 
-                          key={c.id} 
-                          className={`comment-bubble ${c.isInternal ? 'is-internal' : ''}`} 
-                          style={{ 
+                        <div
+                          key={c.id}
+                          className={`comment-bubble ${c.isInternal ? 'is-internal' : ''}`}
+                          style={{
                             alignSelf: isCurrentUser ? 'flex-end' : 'flex-start',
                             borderLeft: c.isInternal ? '4px solid var(--status-maintenance)' : '1px solid var(--border-color)'
                           }}
@@ -1230,12 +1168,12 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                           </div>
                           <div className="comment-body">{c.commentText || c.text || ''}</div>
                           {c.isInternal && (
-                            <span 
-                              className="comment-type-badge" 
-                              style={{ 
-                                position: 'absolute', 
-                                top: '-8px', 
-                                right: '12px', 
+                            <span
+                              className="comment-type-badge"
+                              style={{
+                                position: 'absolute',
+                                top: '-8px',
+                                right: '12px',
                                 background: 'var(--status-maintenance-glow)',
                                 color: 'var(--status-maintenance)'
                               }}
@@ -1250,12 +1188,12 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                 </div>
 
                 <form onSubmit={handleAddComment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <textarea 
-                    value={commentText} 
-                    onChange={e => setCommentText(e.target.value)} 
-                    placeholder={isInternalComment ? "Type private internal notes for support staff..." : "Type public reply to requester..."} 
-                    className="form-input" 
-                    style={{ 
+                  <textarea
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    placeholder={isInternalComment ? "Type private internal notes for support staff..." : "Type public reply to requester..."}
+                    className="form-input"
+                    style={{
                       minHeight: '100px',
                       borderColor: isInternalComment ? 'var(--status-maintenance)' : 'var(--border-color)',
                       background: isInternalComment ? 'var(--status-maintenance-glow)' : 'var(--bg-card)'
@@ -1265,10 +1203,10 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     {currentRole !== 'Employee' ? (
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={isInternalComment} 
-                          onChange={e => setIsInternalComment(e.target.checked)} 
+                        <input
+                          type="checkbox"
+                          checked={isInternalComment}
+                          onChange={e => setIsInternalComment(e.target.checked)}
                         />
                         <span style={{ color: 'var(--status-maintenance)', fontWeight: 600 }}>Mark as Private Internal staff note</span>
                       </label>
@@ -1286,67 +1224,40 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="card" style={{ padding: '20px' }}>
                 <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Ticket Attributes</h4>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  
+
                   {/* Status Dropdown */}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontSize: '11px' }}>Status</label>
-                    <select
-                      className="form-input"
-                      value={activeTicket.status}
-                      disabled={currentRole === 'Employee'}
+                    <CustomSelect value={activeTicket.status} disabled={currentRole === 'Employee'}
                       onChange={e => handleUpdateStatus(e.target.value)}
-                    >
-                      {['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => (
-                        <option key={st} value={st}>{st}</option>
-                      ))}
-                    </select>
+                      options={['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened']} />
                   </div>
 
                   {/* Priority Dropdown */}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontSize: '11px' }}>Priority</label>
-                    <select
-                      className="form-input"
-                      value={activeTicket.priority}
-                      disabled={currentRole === 'Employee'}
+                    <CustomSelect value={activeTicket.priority} disabled={currentRole === 'Employee'}
                       onChange={e => handleUpdatePriority(e.target.value)}
-                    >
-                      {['Critical', 'Medium', 'Low'].map(p => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
+                      options={['Critical', 'Medium', 'Low']} />
                   </div>
 
                   {/* Category Dropdown */}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontSize: '11px' }}>Category</label>
-                    <select
-                      className="form-input"
-                      value={activeTicket.category || 'Software'}
-                      disabled={currentRole === 'Employee'}
+                    <CustomSelect value={activeTicket.category || 'Software'} disabled={currentRole === 'Employee'}
                       onChange={e => handleUpdateCategory(e.target.value)}
-                    >
-                      {distinctCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                      options={distinctCategories} />
                   </div>
 
                   {/* Department (Super Admin only) */}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" style={{ fontSize: '11px' }}>Department Queue</label>
                     {currentRole === 'Super Admin' ? (
-                      <select
-                        className="form-input"
-                        value={activeTicket.department}
+                      <CustomSelect value={activeTicket.department}
                         onChange={e => handleUpdateDepartment(e.target.value)}
-                      >
-                        {distinctDepartments.map(d => (
-                          <option key={d} value={d}>{d} Queue</option>
-                        ))}
-                      </select>
+                        options={distinctDepartments.map(d => ({ value: d, label: d + ' Queue' }))} />
                     ) : (
                       <div style={{ padding: '6px 12px', background: 'var(--bg-sidebar)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontSize: '13px', fontWeight: '600' }}>
                         {activeTicket.department}
@@ -1358,18 +1269,11 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   {currentRole !== 'Employee' && (
                     <div className="form-group" style={{ margin: 0, borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
                       <label className="form-label" style={{ fontSize: '11px' }}>Desk Officer Assignment</label>
-                      <select 
-                        className="form-input" 
-                        value={activeTicket.assignedTo || ''} 
+                      <CustomSelect value={activeTicket.assignedTo || ''} searchable style={{ marginBottom: '8px' }}
                         onChange={e => handleAssignTicket(e.target.value ? parseInt(e.target.value) : '')}
-                        style={{ marginBottom: '8px' }}
-                      >
-                        <option value="">-- Choose Agent --</option>
-                        {usersList.filter(u => u.role !== 'Employee').map(u => (
-                          <option key={u.id} value={u.id}>{u.name || u.username} ({u.role})</option>
-                        ))}
-                      </select>
-                      
+                        placeholder="-- Choose Agent --"
+                        options={[{ value: '', label: '-- Choose Agent --' }, ...usersList.filter(u => u.role !== 'Employee').map(u => ({ value: u.id, label: (u.name || u.username) + ' (' + u.role + ')' }))]} />
+
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -1386,8 +1290,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
               {/* Employee self-close or reopen */}
               {activeTicket.status === 'Resolved' && (
-                <button 
-                  className="btn btn-primary" 
+                <button
+                  className="btn btn-primary"
                   onClick={() => handleUpdateStatus('Closed')}
                   style={{ width: '100%' }}
                 >
@@ -1395,8 +1299,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                 </button>
               )}
               {activeTicket.status === 'Closed' && (
-                <button 
-                  className="btn btn-secondary" 
+                <button
+                  className="btn btn-secondary"
                   onClick={() => handleUpdateStatus('Reopened')}
                   style={{ width: '100%' }}
                 >
@@ -1431,17 +1335,14 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
             </>
           }
         >
-                
+
                 {/* Unified helpdesk: the requester chooses the queue. Previously this was
                     auto-routed from their own profile, so an HR employee's IT problem
                     was filed to the HR queue. */}
                 <div className="form-group">
                   <label className="form-label">Service Queue Department *</label>
-                  <select className="form-input" value={ticketDepartment} onChange={e => setTicketDepartment(e.target.value)} required disabled={isFiling}>
-                    {HELPDESK_DEPARTMENTS.map(d => (
-                      <option key={d.value} value={d.value}>{d.label}</option>
-                    ))}
-                  </select>
+                  <CustomSelect value={ticketDepartment} onChange={e => setTicketDepartment(e.target.value)} required disabled={isFiling}
+                    options={HELPDESK_DEPARTMENTS.map(d => ({ value: d.value, label: d.label }))} />
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     <Building size={11} style={{ verticalAlign: '-1px' }} /> Routed to the {HELPDESK_DEPARTMENTS.find(d => d.value === ticketDepartment)?.label} team.
                   </span>
@@ -1449,40 +1350,35 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
                 <div className="form-group">
                   <label className="form-label">Ticket Type *</label>
-                  <select className="form-input" value={ticketType} onChange={e => setTicketType(e.target.value)} required disabled={isFiling}>
-                    {TICKET_TYPES.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+                  <CustomSelect value={ticketType} onChange={e => setTicketType(e.target.value)} required disabled={isFiling}
+                    options={TICKET_TYPES} />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Category *</label>
-                  <select className="form-input" value={category} onChange={e => setCategory(e.target.value)} required>
-                    {distinctCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  <CustomSelect value={category} onChange={e => setCategory(e.target.value)} required
+                    options={distinctCategories} />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Priority Impact Level *</label>
-                  <select className="form-input" value={priority} onChange={e => setPriority(e.target.value)} required>
-                    <option value="Critical">Level 1 (Critical) - 10h SLA Resolution</option>
-                    <option value="Medium">Level 2 (Medium) - 24h SLA Resolution</option>
-                    <option value="Low">Level 3 (Low) - 48h SLA Resolution</option>
-                  </select>
+                  <CustomSelect value={priority} onChange={e => setPriority(e.target.value)} required
+                    options={[
+                      { value: 'Critical', label: 'Level 1 (Critical) - 10h SLA Resolution' },
+                      { value: 'Medium', label: 'Level 2 (Medium) - 24h SLA Resolution' },
+                      { value: 'Low', label: 'Level 3 (Low) - 48h SLA Resolution' }
+                    ]} />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Subject *</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Dell workstation keeps overheating on boot" 
-                    className="form-input" 
-                    value={subject} 
-                    onChange={e => setSubject(e.target.value)} 
-                    required 
+                  <input
+                    type="text"
+                    placeholder="e.g. Dell workstation keeps overheating on boot"
+                    className="form-input"
+                    value={subject}
+                    onChange={e => setSubject(e.target.value)}
+                    required
                     disabled={isFiling}
                   />
                 </div>
@@ -1536,13 +1432,13 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
                 <div className="form-group">
                   <label className="form-label">Detailed Description *</label>
-                  <textarea 
-                    placeholder="Describe your request or workstation issues in details..." 
-                    className="form-input" 
-                    style={{ minHeight: '100px' }} 
-                    value={description} 
-                    onChange={e => setDescription(e.target.value)} 
-                    required 
+                  <textarea
+                    placeholder="Describe your request or workstation issues in details..."
+                    className="form-input"
+                    style={{ minHeight: '100px' }}
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    required
                     disabled={isFiling}
                   />
                 </div>
@@ -1551,15 +1447,15 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                 <div className="form-group">
                   <label className="form-label">Attachments (Optional)</label>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleAttachmentUpload} 
-                      style={{ display: 'none' }} 
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleAttachmentUpload}
+                      style={{ display: 'none' }}
                     />
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary" 
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
                       onClick={() => fileInputRef.current.click()}
                       disabled={isUploading || isFiling}
                       style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -1576,8 +1472,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <div key={idx} className="attachment-preview-card">
                           <FileText size={18} className="attachment-file-icon" />
                           <span className="attachment-file-name" title={att.name}>{att.name}</span>
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             style={{ background: 'transparent', border: 'none', color: 'var(--status-disposed)', marginTop: '4px', cursor: 'pointer' }}
                             onClick={() => setUploadedAttachments(prev => prev.filter((_, i) => i !== idx))}
                           >

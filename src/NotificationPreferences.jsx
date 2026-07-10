@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Save, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { api } from './api';
 import Checkbox from './Checkbox';
+import CustomSelect from './CustomSelect';
 import AsyncBoundary from './AsyncBoundary';
 import { STATUS } from './asyncStatus';
 
@@ -239,16 +240,13 @@ const NotificationPreferences = ({ addToast, currentRole }) => {
 
                         <td>
                           {hasPriority(event) ? (
-                            <select
-                              className="form-input form-input-sm"
+                            <CustomSelect
                               value={floors[event] || ''}
                               onChange={(e) => setFloor(event, e.target.value)}
                               disabled={!isSuperAdmin}
-                              aria-label={`Minimum priority for ${prettyEvent(event)}`}
-                            >
-                              <option value="">Any</option>
-                              {PRIORITIES.map((p) => <option key={p} value={p}>{p} and above</option>)}
-                            </select>
+                              placeholder="Any"
+                              options={[{ value: '', label: 'Any' }, ...PRIORITIES.map((pr) => ({ value: pr, label: `${pr} and above` }))]}
+                            />
                           ) : (
                             <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
                           )}
@@ -301,20 +299,16 @@ const NotificationPreferences = ({ addToast, currentRole }) => {
                             })}
 
                             {isSuperAdmin && (
-                              <select
-                                className="form-input form-input-sm"
-                                style={{ width: '150px' }}
+                              <CustomSelect
                                 value=""
-                                onChange={(e) => { addUser(event, e.target.value); e.target.value = ''; }}
-                                aria-label={`Add an individual recipient for ${prettyEvent(event)}`}
-                              >
-                                <option value="">Add person…</option>
-                                {users
+                                onChange={(e) => addUser(event, e.target.value)}
+                                placeholder="Add person…"
+                                searchable
+                                style={{ width: '160px' }}
+                                options={users
                                   .filter((u) => !recipients[event]?.userIds.has(u.id))
-                                  .map((u) => (
-                                    <option key={u.id} value={u.id}>{u.name || u.username} ({u.role})</option>
-                                  ))}
-                              </select>
+                                  .map((u) => ({ value: u.id, label: `${u.name || u.username} (${u.role})` }))}
+                              />
                             )}
 
                             {recipients[event]?.roles.size === 0 && recipients[event]?.userIds.size === 0 && (
