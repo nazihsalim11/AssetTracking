@@ -276,7 +276,7 @@ const PurchaseOrdersPage = ({ currentRole, invoices = [], amcs = [], addToast })
 
         <div className="filters-row">
           <div className="filters-left" style={{ flexGrow: 1 }}>
-            <div className="search-bar-container" style={{ minWidth: '280px' }}>
+            <div className="search-bar-container" style={{ minWidth: 'min(280px, 100%)' }}>
               <Search className="search-icon" />
               <input className="search-bar" placeholder="Search PO number, vendor or notes…"
                      value={query} onChange={(e) => setQuery(e.target.value)} />

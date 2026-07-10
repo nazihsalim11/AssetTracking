@@ -496,7 +496,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
         <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
             {/* Search Input - Prominent */}
-            <div style={{ position: 'relative', flexGrow: 1, minWidth: '280px' }}>
+            <div style={{ position: 'relative', flexGrow: 1, minWidth: 'min(280px, 100%)' }}>
               <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
               <input 
                 type="text" 
@@ -804,7 +804,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                 <input className="form-input" type="text" placeholder="e.g. Software Engineer"
                   value={formDesignation} onChange={e => setFormDesignation(e.target.value)} disabled={isSubmitting} />
               </div>
-              <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div className="form-row" style={{ gap: '10px' }}>
                 <div className="form-group">
                   <label className="form-label">Role</label>
                   <CustomSelect
@@ -860,7 +860,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                   <label className="form-label">Phone Number</label>
                   <input className="form-input" type="text" value={editFormPhoneNumber} onChange={e => setEditFormPhoneNumber(e.target.value)} placeholder="e.g. +91 98765 43210" />
                 </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-grid" style={{ gap: '12px' }}>
                   <div className="form-group">
                     <label className="form-label">Department</label>
                     <CustomSelect
@@ -874,7 +874,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                     <input className="form-input" type="text" value={editFormDesignation} onChange={e => setEditFormDesignation(e.target.value)} />
                   </div>
                 </div>
-                <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-grid" style={{ gap: '12px' }}>
                   <div className="form-group">
                     <label className="form-label">Role</label>
                     <CustomSelect
@@ -4577,7 +4577,7 @@ function App() {
                       </div>
 
                       {/* Log service record inside contract */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '20px', marginTop: '10px' }}>
                         <div>
                           <h4 style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>Record Maintenance Visit</h4>
                           <form onSubmit={(e) => handleAddAMCServiceRecord(e, amc.id)} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4760,9 +4760,9 @@ function App() {
                         <>
                           {/* Search and Action Toolbar */}
                           <div className="card" style={{ padding: '16px', margin: '20px 0 16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: '280px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: 'min(280px, 100%)', flexWrap: 'wrap', alignItems: 'center' }}>
                               {/* Search */}
-                              <div style={{ position: 'relative', width: '250px' }}>
+                              <div style={{ position: 'relative', width: 'min(250px, 100%)' }}>
                                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                                 <input 
                                   type="text" 
@@ -5041,7 +5041,7 @@ function App() {
                   {financeSubTab === 'pending_upload' && (
                     <>
                       <div className="card" style={{ padding: '16px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: '280px', maxWidth: '500px', position: 'relative' }}>
+                        <div style={{ display: 'flex', gap: '12px', flexGrow: 1, minWidth: 'min(280px, 100%)', maxWidth: '500px', position: 'relative' }}>
                           <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                           <input 
                             type="text" 
@@ -5094,7 +5094,7 @@ function App() {
                                     </span>
                                     <span className="badge" style={{ backgroundColor: 'var(--bg-sidebar)', color: 'var(--text-primary)' }}>PO: {inv.poReference}</span>
                                   </div>
-                                  <div style={{ fontSize: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                                  <div style={{ fontSize: '13px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 16px' }}>
                                     <div><strong>Vendor Partner:</strong> {inv.vendor}</div>
                                     <div><strong>Issue Date:</strong> {inv.date}</div>
                                     <div><strong>Total Bill:</strong> {formatINR(total)}</div>
@@ -5109,7 +5109,7 @@ function App() {
                                     background: 'var(--bg-sidebar)', 
                                     textAlign: 'center', 
                                     position: 'relative', 
-                                    minWidth: '280px',
+                                    minWidth: 'min(280px, 100%)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     alignItems: 'center',
@@ -5144,7 +5144,7 @@ function App() {
                   )}
 
                   {financeSubTab === 'asset_mapping' && (
-                    <div className="dashboard-grid-secondary" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                    <div className="dashboard-grid-secondary" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                       <div className="card">
                         <span className="card-title">Link Assets to Invoice</span>
                         {hasPermission('finance') ? (
@@ -6471,7 +6471,7 @@ function App() {
         >
 
               {/* Core Details Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                 <div>
                   <h4 style={{ fontSize: '15px', color: 'var(--text-primary)' }}>{assetDetailModal.name}</h4>
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Serial: {assetDetailModal.serialNumber}</span>
@@ -6573,7 +6573,7 @@ function App() {
         >
 
               {/* Invoice Specs */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div><strong>Vendor:</strong> {invoiceDetailModal.vendor}</div>
                   <div><strong>PO Reference:</strong> {invoiceDetailModal.poReference || 'N/A'}</div>

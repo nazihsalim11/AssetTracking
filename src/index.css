@@ -1103,16 +1103,44 @@ h5, h6 { font-size: var(--fs-sm); letter-spacing: 0; }
    11  FORMS
    ============================================================ */
 
+/* minmax(0, 1fr) rather than 1fr: a grid track's automatic minimum is its content's
+   min-content width, and an <input> carries an intrinsic one (~170px+). With plain
+   `1fr` a two-column form cannot shrink below roughly 2×170px and overflows narrow
+   viewports instead of letting the columns compress. */
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-4) var(--sp-5);
 }
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3);
+}
+
+/* Same automatic-minimum problem, one level down: these are the grid/flex items.
+   A flex/grid item's automatic minimum size is its min-content width, so a single
+   wide descendant drags the whole card — and with it the page — past the viewport.
+   Page-level containers must be free to shrink; their contents wrap, scroll or
+   truncate on their own. Measured on /#/amc at 360px: the card was pinned at 604px
+   inside a 278px column until these were allowed to shrink. */
+.page-container > *,
+.card,
+.doc-card,
+.form-group,
+.form-grid > *,
+.form-row > * {
+  min-width: 0;
+}
+
+/* Form controls default to an intrinsic min-width from their `size` attribute,
+   which is what pushes their container past the viewport on phones. */
+input,
+select,
+textarea,
+.form-input {
+  min-width: 0;
 }
 
 .form-group {
