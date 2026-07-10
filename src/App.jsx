@@ -38,6 +38,7 @@ import {
   Moon,
   LogOut,
   Users,
+  Menu,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
@@ -47,6 +48,7 @@ import LoginView from './LoginView'
 import CustomSelect from './CustomSelect'
 import RelativeTime from './RelativeTime'
 import { useAnchoredOverlay } from './useAnchoredOverlay'
+import { lockBodyScroll, unlockBodyScroll } from './scrollLock'
 import { api } from './api'
 import BulkImportModal from './BulkImportModal'
 import TicketsPage from './TicketsPage'
@@ -1427,6 +1429,7 @@ function App() {
   }, [mappingInvoiceId, assets]);
 
   // Modals & UI States
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const notifBellRef = useRef(null);
   const notifPopoverStyle = useAnchoredOverlay(notifBellRef, showNotifications, {
@@ -1710,7 +1713,28 @@ function App() {
 
   const navigate = (tab) => {
     window.location.hash = `#/${tab}`;
+    setMobileNavOpen(false);
   };
+
+  // While the nav drawer is open it behaves like a dialog: the page behind it does
+  // not scroll, Escape dismisses it, and growing past the phone breakpoint closes it
+  // so the drawer can never be left open over a layout that already shows the rail.
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+
+    lockBodyScroll();
+    const onKeyDown = (e) => { if (e.key === 'Escape') setMobileNavOpen(false); };
+    const desktop = window.matchMedia('(min-width: 641px)');
+    const onBreakpoint = (e) => { if (e.matches) setMobileNavOpen(false); };
+
+    document.addEventListener('keydown', onKeyDown);
+    desktop.addEventListener('change', onBreakpoint);
+    return () => {
+      unlockBodyScroll();
+      document.removeEventListener('keydown', onKeyDown);
+      desktop.removeEventListener('change', onBreakpoint);
+    };
+  }, [mobileNavOpen]);
 
   // Toast triggers helper
   const addToast = (title, message, type = 'info') => {
@@ -3482,7 +3506,15 @@ function App() {
       </div>
 
       {/* Sidebar Menu Drawer */}
-      <aside className="sidebar">
+      {mobileNavOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside id="app-sidebar" className={`sidebar ${mobileNavOpen ? 'is-open' : ''}`}>
         <div className="logo-section">
           <div className="logo-icon">AF</div>
           <span className="logo-text">AssetFlow</span>
@@ -3591,6 +3623,17 @@ function App() {
       <main className="main-content">
         {/* Header toolbar */}
         <header className="top-header">
+          <button
+            type="button"
+            className="mobile-nav-toggle"
+            onClick={() => setMobileNavOpen((open) => !open)}
+            aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="app-sidebar"
+          >
+            <Menu size={18} />
+          </button>
+
           <div className="header-left">
             <div className="search-bar-container">
               <Search className="search-icon" />

@@ -701,6 +701,29 @@ h5, h6 { font-size: var(--fs-sm); letter-spacing: 0; }
   z-index: 90;
 }
 
+/* Only exists on phones, where the sidebar becomes a drawer. */
+.mobile-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-standard),
+              color var(--dur-1) var(--ease-standard);
+}
+
+.mobile-nav-toggle:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
 .header-left {
   flex-grow: 1;
   max-width: 460px;
@@ -3830,6 +3853,67 @@ select.form-input {
 @media (max-width: 640px) {
   :root {
     --header-h: 56px;
+  }
+
+  /* Phones only. The 72px icon rail costs a fifth of a 360px screen, so the nav
+     leaves the layout entirely and slides in over the content instead. Tablets
+     (641px and up) keep the rail. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(280px, 82vw);
+    height: 100vh;
+    height: 100dvh;
+    transform: translate3d(-100%, 0, 0);
+    transition: transform var(--dur-3) var(--ease-out);
+    z-index: 1300;
+  }
+
+  .sidebar.is-open {
+    transform: translate3d(0, 0, 0);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1250;
+    background: var(--bg-overlay);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: fade-in var(--dur-2) var(--ease-out);
+  }
+
+  /* Undo the <=1100px icon rail: inside a drawer there is room for the labels. */
+  .logo-section {
+    justify-content: flex-start;
+    padding: 0 var(--sp-5);
+  }
+
+  .logo-text {
+    display: inline;
+  }
+
+  .nav-links {
+    padding: var(--sp-3);
+    align-items: stretch;
+  }
+
+  .nav-item {
+    font-size: var(--fs-sm);
+    justify-content: flex-start;
+    gap: var(--sp-3);
+    padding: 11px var(--sp-3);
+    width: 100%;
+  }
+
+  .nav-item.active::after {
+    left: -4px;
+  }
+
+  .mobile-nav-toggle {
+    display: inline-flex;
   }
 
   .page-container {
