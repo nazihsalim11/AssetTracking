@@ -483,7 +483,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
               {filteredUsers.length} registered account{filteredUsers.length !== 1 ? 's' : ''} shown
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div className="action-row" style={{ gap: '10px' }}>
             <button className="btn btn-primary" onClick={() => { setShowRegisterModal(true); setFormError(''); setFormSuccess(''); }} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               👤 Register New User
             </button>
@@ -4210,7 +4210,7 @@ function App() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                       <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Assign Available Asset</h4>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div className="action-row">
                         <CustomSelect
                           options={[
                             { value: "", label: "-- Select Available Asset --" },
@@ -4239,7 +4239,7 @@ function App() {
 
                     <div>
                       <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Custodian Handovers & Moves</h4>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div className="action-row">
                         <CustomSelect
                           options={[
                             { value: "", label: "-- Select Assigned Asset --" },
@@ -4819,7 +4819,7 @@ function App() {
                               </button>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div className="action-row">
                               <button className="btn btn-secondary" onClick={() => setShowBulkImportInvoices(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <FileUp size={14} />
                                 Bulk Import Invoices

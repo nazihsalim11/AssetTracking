@@ -1242,11 +1242,11 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
             </div>
 
             {/* Pagination footer */}
-            <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-sidebar)', borderBottomLeftRadius: 'var(--radius-lg)', borderBottomRightRadius: 'var(--radius-lg)' }}>
+            <div className="action-row" style={{ padding: '16px', justifyContent: 'space-between', background: 'var(--bg-sidebar)', borderBottomLeftRadius: 'var(--radius-lg)', borderBottomRightRadius: 'var(--radius-lg)' }}>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 Showing {totalItems > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} tickets
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="action-row">
                 <button
                   className="btn btn-secondary"
                   style={{ padding: '6px 12px', fontSize: '12px' }}

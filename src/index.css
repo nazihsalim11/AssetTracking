@@ -996,6 +996,19 @@ h5, h6 { font-size: var(--fs-sm); letter-spacing: 0; }
   flex-shrink: 0;
 }
 
+/* A cluster of buttons/controls that must wrap onto a second line rather than
+   overflow. These were written as bare divs with an inline `display: flex`, and an
+   inline style cannot be reached by a media query — which is exactly why they were
+   the last thing still running off the side of a phone screen. Callers keep any
+   inline gap or justify-content they need; only the flex/wrap contract lives here. */
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
 /* ============================================================
    10  BUTTONS
    ============================================================ */
@@ -2354,6 +2367,10 @@ select.form-input {
 .custom-select-container {
   font-family: var(--font-sans);
   position: relative;
+  /* As a flex item its automatic minimum is the trigger's min-content width, so a
+     long option label ("AST-001 - Dell Latitude ... (IT Equipment)") would stop the
+     select shrinking and push its row off screen. The label already truncates. */
+  min-width: 0;
 }
 
 .custom-select-trigger {
