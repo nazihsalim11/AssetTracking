@@ -94,9 +94,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
    * The old version swallowed a failed fetch into console.error, leaving `tickets`
    * empty and `analytics.counts` at its initial zeros — so a backend outage rendered
    * as "0 tickets", indistinguishable from a genuinely empty queue. It also read a
-   * `db_tickets` key from localStorage and presented it as live data. (The mutation
-   * handlers below still have offline branches that write that key; they are now
-   * unreachable, because App refuses to render a page when the API is down.)
+   * localStorage key and presented it as live data; every such fallback has since
+   * been replaced with an explicit "not connected" error.
    *
    * A failure on the *first* load becomes an error state with a Retry. A failure on a
    * background refresh (there is one after each mutation) must not wipe a working
@@ -243,48 +242,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         setIsFiling(false);
       }
     } else {
-      // Local mode
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const nextId = localTickets.length + 1;
-      const deptCode = targetDept === 'IT' ? 'IT' : targetDept === 'HR' ? 'HR' : targetDept === 'Finance' ? 'FIN' : targetDept.substring(0, 3).toUpperCase();
-      const ticketId = `${deptCode}-${String(nextId).padStart(6, '0')}`;
-
-      const newTicketObj = {
-        id: nextId,
-        ticketId,
-        subject,
-        description,
-        department: targetDept,
-        category,
-        ticketType,
-        priority,
-        status: 'Open',
-        createdBy: currentUser?.id || 1,
-        createdByName: currentUser?.name || 'Local User',
-        slaDeadline: slaDeadline.toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        comments: [],
-        timeline: [{
-          id: Date.now(),
-          actorName: currentUser?.name || 'Local User',
-          action: 'Created',
-          detail: 'Ticket created locally',
-          createdAt: new Date().toISOString()
-        }],
-        attachments: uploadedAttachments
-      };
-
-      const finalTickets = [newTicketObj, ...localTickets];
-      localStorage.setItem('db_tickets', JSON.stringify(finalTickets));
-      addToast("Ticket Created (Local)", `Ticket ${ticketId} created locally.`, "success");
-      setShowCreateModal(false);
-      setSubject('');
-      setDescription('');
-      setCategory('Software');
-      setUploadedAttachments([]);
-      loadTickets();
-      setIsFiling(false);
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -319,38 +279,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Comment Failed", err.message, "error");
       }
     } else {
-      // Local
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        if (!ticket.comments) ticket.comments = [];
-        if (!ticket.timeline) ticket.timeline = [];
-        
-        ticket.comments.push({
-          id: Date.now(),
-          authorName: currentUser?.name || 'Local User',
-          authorId: currentUser?.id || 1,
-          commentText,
-          isInternal: isInternalComment,
-          createdAt: new Date().toISOString()
-        });
-
-        ticket.timeline.push({
-          id: Date.now() + 1,
-          actorName: currentUser?.name || 'Local User',
-          action: 'Comment Added',
-          detail: isInternalComment ? 'Added internal comment' : 'Added public comment',
-          createdAt: new Date().toISOString()
-        });
-
-        ticket.updatedAt = new Date().toISOString();
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setCommentText('');
-        setActiveTicket(ticket);
-        loadTickets();
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -367,32 +298,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Assignment Failed", err.message, "error");
       }
     } else {
-      // Local assignment
-      const targetUser = usersList.find(u => u.id === assignToUserId);
-      const name = targetUser ? targetUser.name : 'Unassigned';
-      
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        ticket.assignedTo = assignToUserId;
-        ticket.assignedToName = name;
-        ticket.status = 'In Progress';
-        ticket.updatedAt = new Date().toISOString();
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'Admin',
-          action: 'Assigned',
-          detail: `Assigned ticket to ${name}`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Ticket Assigned (Local)", `Assigned to ${name}`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -409,46 +317,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Routing Failed", err.message, "error");
       }
     } else {
-      // Local Workload Assignment
-      let eligibleAgents = usersList.filter(u => u.role !== 'Employee' && u.department === activeTicket.department);
-      if (eligibleAgents.length === 0) {
-        eligibleAgents = usersList.filter(u => u.role !== 'Employee');
-      }
-      if (eligibleAgents.length === 0) {
-        addToast("Auto Assignment Failed", "No eligible support agents found.", "error");
-        return;
-      }
-
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const workloads = {};
-      eligibleAgents.forEach(a => {
-        workloads[a.id] = localTickets.filter(t => t.assignedTo === a.id && ['Open', 'In Progress', 'Pending', 'On Hold', 'Reopened'].includes(t.status)).length;
-      });
-
-      eligibleAgents.sort((a, b) => workloads[a.id] - workloads[b.id]);
-      const chosenAgent = eligibleAgents[0];
-      const targetName = chosenAgent.name || chosenAgent.username;
-
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        ticket.assignedTo = chosenAgent.id;
-        ticket.assignedToName = targetName;
-        ticket.status = 'In Progress';
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'System',
-          action: 'Auto-Assigned',
-          detail: `Auto-assigned to ${targetName} (Workload: ${workloads[chosenAgent.id]} active tickets)`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Auto Assigned (Local)", `Assigned to ${targetName} (${workloads[chosenAgent.id]} active)`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -465,30 +336,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Failed to Update Status", err.message, "error");
       }
     } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        const prev = ticket.status;
-        ticket.status = newStatus;
-        ticket.updatedAt = new Date().toISOString();
-        if (newStatus === 'Resolved') ticket.resolvedAt = new Date().toISOString();
-        if (newStatus === 'Closed') ticket.closedAt = new Date().toISOString();
-        
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'Local User',
-          action: 'Status Changed',
-          detail: `Status changed from ${prev} to ${newStatus}`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Status Updated (Local)", `Status changed to ${newStatus}`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -505,28 +355,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Failed to Update Priority", err.message, "error");
       }
     } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        const prev = ticket.priority;
-        ticket.priority = newPriority;
-        ticket.updatedAt = new Date().toISOString();
-        
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'Local User',
-          action: 'Priority Changed',
-          detail: `Priority changed from ${prev} to ${newPriority}`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Priority Updated (Local)", `Priority updated to ${newPriority}`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -543,28 +374,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Failed to Update Category", err.message, "error");
       }
     } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        const prev = ticket.category || 'Software';
-        ticket.category = newCategory;
-        ticket.updatedAt = new Date().toISOString();
-        
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'Local User',
-          action: 'Category Changed',
-          detail: `Category changed from ${prev} to ${newCategory}`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Category Updated (Local)", `Category updated to ${newCategory}`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -581,28 +393,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Failed to Update Department", err.message, "error");
       }
     } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const tIdx = localTickets.findIndex(t => t.id === activeTicket.id);
-      if (tIdx >= 0) {
-        const ticket = localTickets[tIdx];
-        const prev = ticket.department;
-        ticket.department = newDept;
-        ticket.updatedAt = new Date().toISOString();
-        
-        ticket.timeline.push({
-          id: Date.now(),
-          actorName: currentUser?.name || 'Local User',
-          action: 'Department Changed',
-          detail: `Queue department changed from ${prev} to ${newDept}`,
-          createdAt: new Date().toISOString()
-        });
-
-        localTickets[tIdx] = ticket;
-        localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-        setActiveTicket(ticket);
-        loadTickets();
-        addToast("Department Updated (Local)", `Queue reassigned to ${newDept}`, "success");
-      }
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
@@ -619,205 +412,109 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
         addToast("Deletion Failed", err.message, "error");
       }
     } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      const updated = localTickets.filter(t => !selectedTicketIds.includes(t.id));
-      localStorage.setItem('db_tickets', JSON.stringify(updated));
-      addToast("Bulk Deleted (Local)", `Deleted ${selectedTicketIds.length} tickets.`, "success");
-      setSelectedTicketIds([]);
-      loadTickets();
+      // No local fallback: presenting stale localStorage rows as live server
+      // data is worse than refusing the action.
+      addToast('Not connected', 'You are not connected to the server. This action was not performed.', 'error');
     }
   };
 
-  const handleBulkStatus = async (status) => {
-    if (!status) return;
-    if (isApiConnected) {
-      try {
-        await api.bulkUpdateTicketsStatus(selectedTicketIds, status);
-        addToast("Bulk Status Updated", `Updated ${selectedTicketIds.length} tickets to ${status}.`, "success");
-        setBulkStatusVal('');
-        setSelectedTicketIds([]);
-        loadTickets();
-      } catch (err) {
-        addToast("Update Failed", err.message, "error");
-      }
-    } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      selectedTicketIds.forEach(id => {
-        const tIdx = localTickets.findIndex(t => t.id === id);
-        if (tIdx >= 0) {
-          const prev = localTickets[tIdx].status;
-          localTickets[tIdx].status = status;
-          localTickets[tIdx].updatedAt = new Date().toISOString();
-          if (status === 'Resolved') localTickets[tIdx].resolvedAt = new Date().toISOString();
-          if (status === 'Closed') localTickets[tIdx].closedAt = new Date().toISOString();
-          localTickets[tIdx].timeline.push({
-            id: Date.now() + Math.random(),
-            actorName: currentUser?.name || 'Admin',
-            action: 'Bulk Status Changed',
-            detail: `Bulk status changed from ${prev} to ${status}`,
-            createdAt: new Date().toISOString()
-          });
-        }
+  const [isApplyingBulk, setIsApplyingBulk] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
+
+  /**
+   * Everything the user has staged, in the order it will be applied.
+   *
+   * The old workflow gave each field its own "Go" button, so changing status,
+   * priority and assignee across a selection meant three separate round trips, three
+   * toasts, and three chances to forget one. Staging them means the user reviews the
+   * whole edit before any of it happens.
+   */
+  const getPendingBulkChanges = () => {
+    const changes = [];
+    if (bulkStatusVal) {
+      changes.push({ field: 'Status', value: bulkStatusVal, run: () => api.bulkUpdateTicketsStatus(selectedTicketIds, bulkStatusVal) });
+    }
+    if (bulkPriorityVal) {
+      changes.push({ field: 'Priority', value: bulkPriorityVal, run: () => api.bulkUpdateTicketsPriority(selectedTicketIds, bulkPriorityVal) });
+    }
+    if (bulkCategoryVal) {
+      changes.push({ field: 'Category', value: bulkCategoryVal, run: () => api.bulkUpdateTicketsCategory(selectedTicketIds, bulkCategoryVal) });
+    }
+    if (bulkDeptVal) {
+      changes.push({ field: 'Department', value: bulkDeptVal, run: () => api.bulkUpdateTicketsDepartment(selectedTicketIds, bulkDeptVal) });
+    }
+    if (bulkAssignVal) {
+      const target = usersList.find(u => u.id === parseInt(bulkAssignVal, 10));
+      changes.push({
+        field: 'Assignee',
+        value: target ? (target.name || target.username) : 'Unassigned',
+        run: () => api.bulkAssignTickets(selectedTicketIds, bulkAssignVal)
       });
-      localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-      addToast("Bulk Status (Local)", `Updated status of ${selectedTicketIds.length} tickets.`, "success");
-      setBulkStatusVal('');
-      setSelectedTicketIds([]);
-      loadTickets();
     }
+    return changes;
   };
 
-  const handleBulkPriority = async (priority) => {
-    if (!priority) return;
-    if (isApiConnected) {
-      try {
-        await api.bulkUpdateTicketsPriority(selectedTicketIds, priority);
-        addToast("Bulk Priority Updated", `Updated ${selectedTicketIds.length} tickets to ${priority}.`, "success");
-        setBulkPriorityVal('');
-        setSelectedTicketIds([]);
-        loadTickets();
-      } catch (err) {
-        addToast("Update Failed", err.message, "error");
-      }
-    } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      selectedTicketIds.forEach(id => {
-        const tIdx = localTickets.findIndex(t => t.id === id);
-        if (tIdx >= 0) {
-          const prev = localTickets[tIdx].priority;
-          localTickets[tIdx].priority = priority;
-          localTickets[tIdx].updatedAt = new Date().toISOString();
-          localTickets[tIdx].timeline.push({
-            id: Date.now() + Math.random(),
-            actorName: currentUser?.name || 'Admin',
-            action: 'Bulk Priority Changed',
-            detail: `Bulk priority changed from ${prev} to ${priority}`,
-            createdAt: new Date().toISOString()
-          });
+  const clearBulkFields = () => {
+    setBulkStatusVal('');
+    setBulkPriorityVal('');
+    setBulkCategoryVal('');
+    setBulkDeptVal('');
+    setBulkAssignVal('');
+  };
+
+  /**
+   * Applies every staged change to the selection, one field at a time.
+   *
+   * Sequential rather than parallel: each call rewrites the same rows and appends to
+   * the same ticket timeline, and the progress readout would be meaningless otherwise.
+   *
+   * A partial failure keeps the selection and the remaining staged values, so the
+   * user can see what did not land and retry it. Clearing on partial success would
+   * hide the failure behind an empty toolbar.
+   */
+  const handleApplyBulkChanges = async () => {
+    const changes = getPendingBulkChanges();
+    if (changes.length === 0 || isApplyingBulk) return;
+
+    if (!isApiConnected) {
+      addToast('Not connected', 'You are not connected to the server. No changes were applied.', 'error');
+      return;
+    }
+
+    setIsApplyingBulk(true);
+    const failures = [];
+
+    try {
+      for (let i = 0; i < changes.length; i += 1) {
+        const change = changes[i];
+        setBulkProgress({ done: i, total: changes.length, field: change.field });
+        try {
+          await change.run();
+        } catch (err) {
+          failures.push(`${change.field}: ${err.message}`);
         }
-      });
-      localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-      addToast("Bulk Priority (Local)", `Updated priority of ${selectedTicketIds.length} tickets.`, "success");
-      setBulkPriorityVal('');
-      setSelectedTicketIds([]);
-      loadTickets();
-    }
-  };
-
-  const handleBulkCategory = async (cat) => {
-    if (!cat) return;
-    if (isApiConnected) {
-      try {
-        await api.bulkUpdateTicketsCategory(selectedTicketIds, cat);
-        addToast("Bulk Category Updated", `Updated ${selectedTicketIds.length} tickets to ${cat}.`, "success");
-        setBulkCategoryVal('');
-        setSelectedTicketIds([]);
-        loadTickets();
-      } catch (err) {
-        addToast("Update Failed", err.message, "error");
       }
-    } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      selectedTicketIds.forEach(id => {
-        const tIdx = localTickets.findIndex(t => t.id === id);
-        if (tIdx >= 0) {
-          const prev = localTickets[tIdx].category || 'Software';
-          localTickets[tIdx].category = cat;
-          localTickets[tIdx].updatedAt = new Date().toISOString();
-          localTickets[tIdx].timeline.push({
-            id: Date.now() + Math.random(),
-            actorName: currentUser?.name || 'Admin',
-            action: 'Bulk Category Changed',
-            detail: `Bulk category changed from ${prev} to ${cat}`,
-            createdAt: new Date().toISOString()
-          });
-        }
-      });
-      localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-      addToast("Bulk Category (Local)", `Updated category of ${selectedTicketIds.length} tickets.`, "success");
-      setBulkCategoryVal('');
-      setSelectedTicketIds([]);
-      loadTickets();
-    }
-  };
 
-  const handleBulkDepartment = async (dept) => {
-    if (!dept) return;
-    if (isApiConnected) {
-      try {
-        await api.bulkUpdateTicketsDepartment(selectedTicketIds, dept);
-        addToast("Bulk Department Updated", `Reassigned ${selectedTicketIds.length} tickets to ${dept} department.`, "success");
-        setBulkDeptVal('');
+      const applied = changes.length - failures.length;
+      const ticketCount = selectedTicketIds.length;
+
+      if (failures.length === 0) {
+        addToast('Changes applied', `${applied} change${applied === 1 ? '' : 's'} applied to ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}.`, 'success');
+        clearBulkFields();
         setSelectedTicketIds([]);
-        loadTickets();
-      } catch (err) {
-        addToast("Reassignment Failed", err.message, "error");
+      } else if (applied > 0) {
+        addToast('Partially applied', `${applied} of ${changes.length} applied. Failed — ${failures.join('; ')}`, 'error');
+      } else {
+        addToast('Nothing applied', failures.join('; '), 'error');
       }
-    } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      selectedTicketIds.forEach(id => {
-        const tIdx = localTickets.findIndex(t => t.id === id);
-        if (tIdx >= 0) {
-          const prev = localTickets[tIdx].department;
-          localTickets[tIdx].department = dept;
-          localTickets[tIdx].updatedAt = new Date().toISOString();
-          localTickets[tIdx].timeline.push({
-            id: Date.now() + Math.random(),
-            actorName: currentUser?.name || 'Admin',
-            action: 'Bulk Department Changed',
-            detail: `Bulk department reassigned from ${prev} to ${dept}`,
-            createdAt: new Date().toISOString()
-          });
-        }
-      });
-      localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-      addToast("Bulk Department (Local)", `Updated department of ${selectedTicketIds.length} tickets.`, "success");
-      setBulkDeptVal('');
-      setSelectedTicketIds([]);
-      loadTickets();
+
+      await loadTickets();
+    } finally {
+      setIsApplyingBulk(false);
+      setBulkProgress(null);
     }
   };
 
-  const handleBulkAssign = async (agentId) => {
-    if (!agentId) return;
-    const targetUser = usersList.find(u => u.id === parseInt(agentId));
-    const name = targetUser ? (targetUser.name || targetUser.username) : 'Unassigned';
-
-    if (isApiConnected) {
-      try {
-        await api.bulkAssignTickets(selectedTicketIds, agentId);
-        addToast("Bulk Assigned", `Assigned ${selectedTicketIds.length} tickets to ${name}.`, "success");
-        setBulkAssignVal('');
-        setSelectedTicketIds([]);
-        loadTickets();
-      } catch (err) {
-        addToast("Assignment Failed", err.message, "error");
-      }
-    } else {
-      const localTickets = JSON.parse(localStorage.getItem('db_tickets') || '[]');
-      selectedTicketIds.forEach(id => {
-        const tIdx = localTickets.findIndex(t => t.id === id);
-        if (tIdx >= 0) {
-          localTickets[tIdx].assignedTo = parseInt(agentId);
-          localTickets[tIdx].assignedToName = name;
-          localTickets[tIdx].status = 'In Progress';
-          localTickets[tIdx].updatedAt = new Date().toISOString();
-          localTickets[tIdx].timeline.push({
-            id: Date.now() + Math.random(),
-            actorName: currentUser?.name || 'Admin',
-            action: 'Bulk Assigned',
-            detail: `Bulk assigned ticket to ${name}`,
-            createdAt: new Date().toISOString()
-          });
-        }
-      });
-      localStorage.setItem('db_tickets', JSON.stringify(localTickets));
-      addToast("Bulk Assigned (Local)", `Assigned ${selectedTicketIds.length} tickets to ${name}.`, "success");
-      setBulkAssignVal('');
-      setSelectedTicketIds([]);
-      loadTickets();
-    }
-  };
 
   const handleRowCheckbox = (id) => {
     setSelectedTicketIds(prev => 
@@ -918,6 +615,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
     return list;
   };
+
+  // Recomputed each render: the staged edit is derived from the select values.
+  const pendingBulkChanges = getPendingBulkChanges();
 
   const filteredTickets = getFilteredTickets();
   const totalItems = filteredTickets.length;
@@ -1293,90 +993,119 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                 }
                 actions={
                   <>
-                  {/* Status update */}
-                  <div style={{ display: 'flex', gap: '4px' }}>
+                  {/* Stage the fields; nothing is sent until Apply Changes. */}
+                  <div className="action-row">
                     <select
                       className="form-input form-input-sm"
                       style={{ width: '130px'}}
                       value={bulkStatusVal}
                       onChange={e => setBulkStatusVal(e.target.value)}
+                      disabled={isApplyingBulk}
+                      aria-label="Set status for the selected tickets"
                     >
-                      <option value="">Update Status</option>
+                      <option value="">Status…</option>
                       {['Open', 'In Progress', 'Pending', 'On Hold', 'Resolved', 'Closed', 'Reopened'].map(st => (
                         <option key={st} value={st}>{st}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkStatus(bulkStatusVal)}>Go</button>
-                  </div>
 
-                  {/* Priority update */}
-                  <div style={{ display: 'flex', gap: '4px' }}>
                     <select
                       className="form-input form-input-sm"
                       style={{ width: '130px'}}
                       value={bulkPriorityVal}
                       onChange={e => setBulkPriorityVal(e.target.value)}
+                      disabled={isApplyingBulk}
+                      aria-label="Set priority for the selected tickets"
                     >
-                      <option value="">Update Priority</option>
-                      {['Critical', 'Medium', 'Low'].map(p => (
-                        <option key={p} value={p}>{p}</option>
+                      <option value="">Priority…</option>
+                      {['Critical', 'Medium', 'Low'].map(pr => (
+                        <option key={pr} value={pr}>{pr}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkPriority(bulkPriorityVal)}>Go</button>
-                  </div>
 
-                  {/* Category update */}
-                  <div style={{ display: 'flex', gap: '4px' }}>
                     <select
                       className="form-input form-input-sm"
                       style={{ width: '130px'}}
                       value={bulkCategoryVal}
                       onChange={e => setBulkCategoryVal(e.target.value)}
+                      disabled={isApplyingBulk}
+                      aria-label="Set category for the selected tickets"
                     >
-                      <option value="">Update Category</option>
+                      <option value="">Category…</option>
                       {distinctCategories.map(c => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkCategory(bulkCategoryVal)}>Go</button>
-                  </div>
 
-                  {/* Department reassignment (Admin only) */}
-                  {currentRole === 'Super Admin' && (
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    {currentRole === 'Super Admin' && (
                       <select
                         className="form-input form-input-sm"
                         style={{ width: '130px'}}
                         value={bulkDeptVal}
                         onChange={e => setBulkDeptVal(e.target.value)}
+                        disabled={isApplyingBulk}
+                        aria-label="Reassign department for the selected tickets"
                       >
-                        <option value="">Reassign Dept</option>
+                        <option value="">Department…</option>
                         {distinctDepartments.map(d => (
                           <option key={d} value={d}>{d}</option>
                         ))}
                       </select>
-                      <button className="btn btn-secondary btn-sm" onClick={() => handleBulkDepartment(bulkDeptVal)}>Go</button>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Assign custodian */}
-                  <div style={{ display: 'flex', gap: '4px' }}>
                     <select
                       className="form-input form-input-sm"
                       style={{ width: '140px'}}
                       value={bulkAssignVal}
                       onChange={e => setBulkAssignVal(e.target.value)}
+                      disabled={isApplyingBulk}
+                      aria-label="Assign the selected tickets to an agent"
                     >
-                      <option value="">Assign Desk Agent</option>
+                      <option value="">Assignee…</option>
                       {usersList.filter(u => u.role !== 'Employee').map(u => (
                         <option key={u.id} value={u.id}>{u.name || u.username}</option>
                       ))}
                     </select>
-                    <button className="btn btn-secondary btn-sm" onClick={() => handleBulkAssign(bulkAssignVal)}>Go</button>
                   </div>
 
-                  {/* Bulk delete */}
-                  <button className="btn btn-danger btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px'}} onClick={handleBulkDelete}>
+                  {/* Review: exactly what Apply Changes will do. */}
+                  {pendingBulkChanges.length > 0 && (
+                    <div className="bulk-pending" role="status" aria-live="polite">
+                      {pendingBulkChanges.map(c => (
+                        <span key={c.field} className="bulk-pending-chip">
+                          {c.field} <strong>{c.value}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleApplyBulkChanges}
+                    disabled={pendingBulkChanges.length === 0 || isApplyingBulk}
+                    aria-busy={isApplyingBulk}
+                  >
+                    {isApplyingBulk ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        {bulkProgress
+                          ? `Applying ${Math.min(bulkProgress.done + 1, bulkProgress.total)} of ${bulkProgress.total}…`
+                          : 'Applying…'}
+                      </>
+                    ) : (
+                      <>
+                        <Check size={13} />
+                        Apply Changes{pendingBulkChanges.length > 0 ? ` (${pendingBulkChanges.length})` : ''}
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    className="btn btn-danger btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px'}}
+                    onClick={handleBulkDelete}
+                    disabled={isApplyingBulk}
+                  >
                     <Trash2 size={13} />
                     Delete
                   </button>

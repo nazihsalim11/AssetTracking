@@ -2275,6 +2275,38 @@ select.form-input {
   color: var(--text-primary);
 }
 
+/* The staged edit, shown before Apply Changes runs anything. */
+.bulk-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.bulk-pending-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-glow, var(--border-color));
+  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.bulk-pending-chip strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Stacked, full width, inside the overflow menu. */
+.bulk-actions-panel .bulk-pending {
+  flex-direction: row;
+}
+
 /* The overflow menu. Portaled to <body> and anchored by useAnchoredOverlay, so it
    flips above the bar and stays inside the viewport. Layered above the bar. */
 .bulk-actions-panel {
