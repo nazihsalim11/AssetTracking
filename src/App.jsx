@@ -45,6 +45,7 @@ import QRCode from 'qrcode'
 import { mockAuthService } from './auth'
 import LoginView from './LoginView'
 import CustomSelect from './CustomSelect'
+import RelativeTime from './RelativeTime'
 import { useAnchoredOverlay } from './useAnchoredOverlay'
 import { api } from './api'
 import BulkImportModal from './BulkImportModal'
@@ -1724,7 +1725,9 @@ function App() {
   const addAuditLog = async (action, detail) => {
     const newLog = {
       id: `LOG-${Date.now()}`,
-      timestamp: new Date().toLocaleString([], { hour: '2-digit', minute: '2-digit', hour12: true }) + " " + new Date().toLocaleDateString(),
+      // An instant, not a pre-rendered locale string: the UI formats it, and the
+      // server's own created_at replaces this on the next fetch.
+      createdAt: new Date().toISOString(),
       actor: currentRole,
       action,
       detail
@@ -3683,7 +3686,7 @@ function App() {
                           <div className={`notif-dot-active`} style={{ backgroundColor: n.type === 'error' ? 'var(--status-disposed)' : n.type === 'warning' ? 'var(--status-maintenance)' : 'var(--primary)' }}></div>
                           <div className="notif-details" style={{ flexGrow: 1 }}>
                             <span className="notif-text">{n.text}</span>
-                            <span className="notif-time">{n.time}</span>
+                            <RelativeTime className="notif-time" value={n.createdAt} />
                           </div>
                           <button
                             className="btn-table-action delete"
@@ -3858,7 +3861,7 @@ function App() {
                         <div key={log.id} className="log-entry">
                           <div className="log-entry-meta">
                             <span className="log-entry-actor">{log.actor}</span>
-                            <span className="log-entry-time">{log.timestamp}</span>
+                            <RelativeTime className="log-entry-time" value={log.createdAt} />
                           </div>
                           <span className="log-entry-detail">{log.detail}</span>
                         </div>
@@ -5755,7 +5758,7 @@ function App() {
                     {logs.map(log => (
                       <tr key={log.id}>
                         <td style={{ fontFamily: 'var(--mono)', fontSize: '11px' }}>{log.id}</td>
-                        <td style={{ fontSize: '12px' }}>{log.timestamp}</td>
+                        <td style={{ fontSize: '12px' }}><RelativeTime value={log.createdAt} /></td>
                         <td>
                           <span className="badge" style={{ backgroundColor: 'rgba(99,102,241,0.1)', color: 'var(--primary)' }}>
                             {log.actor}

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Mail, Bell, Settings, Trash2, CheckCheck, Circle, Square, CheckSquare } from 'lucide-react';
 import { api } from './api';
+import RelativeTime from './RelativeTime';
 import NotificationSettingsPage from './NotificationSettingsPage';
 
 /**
@@ -281,7 +282,7 @@ const EmailInboxModule = ({
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor(n.type), marginTop: '6px', flexShrink: 0 }} />
                   <div style={{ flexGrow: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: n.read ? 400 : 600 }}>{n.text}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{n.time}</div>
+                    <RelativeTime style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }} value={n.createdAt} />
                   </div>
                   <button
                     className="btn-table-action"

@@ -269,11 +269,14 @@ async function insertInAppNotifications(eventKey, message, inAppClaims) {
       params.push(v);
       return `$${params.length}`;
     });
-    return `(${placeholders[0]},${placeholders[1]},${placeholders[2]},'Just now',FALSE,${placeholders[3]},${placeholders[4]})`;
+    // No `time` column: created_at carries the real instant and the UI derives the
+    // relative label from it. The literal 'Just now' stored here is why every
+    // notification in the bell feed read "Just now" no matter how old it was.
+    return `(${placeholders[0]},${placeholders[1]},${placeholders[2]},FALSE,${placeholders[3]},${placeholders[4]})`;
   });
 
   await db.query(
-    `INSERT INTO notifications (id, text, type, time, read, user_id, event_key)
+    `INSERT INTO notifications (id, text, type, read, user_id, event_key)
      VALUES ${tuples.join(',')}
      ON CONFLICT (id) DO NOTHING`,
     params

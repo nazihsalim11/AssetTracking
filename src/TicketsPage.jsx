@@ -11,6 +11,7 @@ import { openStoredFile } from './files';
 import Modal from './Modal';
 import Markdown from './Markdown';
 import FloatingBulkBar from './FloatingBulkBar';
+import RelativeTime from './RelativeTime';
 
 const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addToast }) => {
   const [tickets, setTickets] = useState([]);
@@ -1430,8 +1431,8 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         <User size={13} />
                         Requester: <strong>{activeTicket.createdByName}</strong>
                       </span>
-                      <span>Created: <strong>{activeTicket.createdAt ? new Date(activeTicket.createdAt).toLocaleString('en-IN') : '—'}</strong></span>
-                      <span>Last Updated: <strong>{activeTicket.updatedAt ? new Date(activeTicket.updatedAt).toLocaleString('en-IN') : '—'}</strong></span>
+                      <span>Created: <strong><RelativeTime value={activeTicket.createdAt} /></strong></span>
+                      <span>Last Updated: <strong><RelativeTime value={activeTicket.updatedAt} /></strong></span>
                       <span>Type: <strong>{activeTicket.ticketType || 'Incident'}</strong></span>
                       <span>Department: <strong>{activeTicket.department}</strong></span>
                       <span>Priority: <strong>{activeTicket.priority}</strong></span>
@@ -1480,7 +1481,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   <div className="timeline-list">
                     {activeTicket.timeline && activeTicket.timeline.map((itm, idx) => (
                       <div key={itm.id || idx} className="timeline-item active">
-                        <div className="timeline-time">{new Date(itm.createdAt).toLocaleString('en-IN')}</div>
+                        <RelativeTime className="timeline-time" style={{ display: 'block' }} value={itm.createdAt} />
                         <div className="timeline-title">{itm.action} by <span style={{ color: 'var(--primary)' }}>{itm.actorName}</span></div>
                         {itm.detail && <div className="timeline-detail">{itm.detail}</div>}
                       </div>
@@ -1512,7 +1513,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                         >
                           <div className="comment-meta">
                             <span className="comment-author">{c.authorName}</span>
-                            <span>{new Date(c.createdAt).toLocaleString('en-IN')}</span>
+                            <RelativeTime value={c.createdAt} />
                           </div>
                           <div className="comment-body">{c.commentText || c.text || ''}</div>
                           {c.isInternal && (

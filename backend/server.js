@@ -261,9 +261,9 @@ app.post('/api/assets/bulk/delete', async (req, res) => {
     await db.query('DELETE FROM assets WHERE id = ANY($1)', [assetIds]);
     const actor = req.headers['x-user-username'] || 'Admin';
     await db.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail)
-       VALUES ($1, $2, $3, $4)`,
-      [new Date().toLocaleString(), actor, 'Bulk Delete Assets', `Deleted ${assetIds.length} assets`]
+      `INSERT INTO system_logs (actor, action, detail)
+       VALUES ($1, $2, $3)`,
+      [actor, 'Bulk Delete Assets', `Deleted ${assetIds.length} assets`]
     );
     res.json({ message: `Successfully deleted ${assetIds.length} assets` });
   } catch (err) {
@@ -284,9 +284,9 @@ app.post('/api/assets/bulk/status', async (req, res) => {
     await db.query('UPDATE assets SET status = $1 WHERE id = ANY($2)', [status, assetIds]);
     const actor = req.headers['x-user-username'] || 'Admin';
     await db.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail)
-       VALUES ($1, $2, $3, $4)`,
-      [new Date().toLocaleString(), actor, 'Bulk Status Update', `Updated ${assetIds.length} assets to status ${status}`]
+      `INSERT INTO system_logs (actor, action, detail)
+       VALUES ($1, $2, $3)`,
+      [actor, 'Bulk Status Update', `Updated ${assetIds.length} assets to status ${status}`]
     );
     res.json({ message: `Successfully updated status of ${assetIds.length} assets` });
   } catch (err) {
@@ -848,13 +848,15 @@ app.get('/api/logs', async (req, res) => {
 });
 
 app.post('/api/logs', async (req, res) => {
-  const { timestamp, actor, action, detail } = req.body;
+  // A client-supplied timestamp is ignored: created_at is set by the database, so
+  // a caller with a wrong clock cannot back-date a log entry.
+  const { actor, action, detail } = req.body;
   const query = `
-    INSERT INTO system_logs (timestamp, actor, action, detail)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO system_logs (actor, action, detail)
+    VALUES ($1, $2, $3)
     RETURNING *;
   `;
-  const values = [timestamp || new Date().toLocaleString(), actor, action, detail || ''];
+  const values = [actor, action, detail || ''];
 
   try {
     const result = await db.query(query, values);
@@ -939,13 +941,16 @@ app.post('/api/emails/bulk/delete', async (req, res) => {
 });
 
 app.post('/api/notifications', async (req, res) => {
-  const { id, text, type, time, read } = req.body;
+  // No `time` column. created_at is the record's real instant and the UI derives
+  // the relative label from it; storing 'Just now' froze every notification at
+  // that literal string forever.
+  const { id, text, type, read } = req.body;
   const query = `
-    INSERT INTO notifications (id, text, type, time, read)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO notifications (id, text, type, read)
+    VALUES ($1, $2, $3, $4)
     RETURNING *;
   `;
-  const values = [id, text, type || 'info', time || 'Just now', read || false];
+  const values = [id, text, type || 'info', read || false];
 
   try {
     const result = await db.query(query, values);
@@ -1117,8 +1122,8 @@ app.patch('/api/role-permissions', async (req, res) => {
     await client.query('COMMIT');
     rolePermissionsCache = null; // force a fresh read on the next enforcement check
     await db.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1,$2,'Role Permissions',$3)`,
-      [new Date().toLocaleString(), user.name || user.username, `Updated: ${Object.keys(updates).join(', ')}`]
+      `INSERT INTO system_logs (actor, action, detail) VALUES ($1,'Role Permissions',$2)`,
+      [user.name || user.username, `Updated: ${Object.keys(updates).join(', ')}`]
     );
     res.json(await loadRolePermissions({ fresh: true }));
   } catch (err) {
@@ -1187,8 +1192,8 @@ app.patch('/api/notification-settings', async (req, res) => {
     );
     notifications.invalidateSettingsCache();
     await db.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1, $2, 'Notification Settings', $3)`,
-      [new Date().toLocaleString(), user.name || user.username, `Updated: ${setClauses.join(', ')}`]
+      `INSERT INTO system_logs (actor, action, detail) VALUES ($1, 'Notification Settings', $2)`,
+      [user.name || user.username, `Updated: ${setClauses.join(', ')}`]
     );
     res.json({ settings: result.rows[0], channels: notifications.channelStatus() });
   } catch (err) {
@@ -1707,9 +1712,8 @@ async function processEmployeeImport(jobId, employees) {
     }
 
     await client.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO system_logs (actor, action, detail) VALUES ($1, $2, $3)`,
       [
-        new Date().toLocaleString(),
         'Admin',
         'Employee Bulk Import',
         `Imported employees. Total: ${summary.total}, Success: ${summary.success}, Failed: ${summary.failed}, Duplicate: ${summary.duplicate}`
@@ -1879,10 +1883,9 @@ app.post('/api/import/assets', async (req, res) => {
 
     const actor = req.headers['x-user-username'] || 'Admin';
     await client.query(
-      `INSERT INTO system_logs (timestamp, actor, action, detail)
-       VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO system_logs (actor, action, detail)
+       VALUES ($1, $2, $3)`,
       [
-        new Date().toLocaleString(),
         actor,
         'Asset Bulk Import',
         `Imported assets. Total: ${summary.total}, Success: ${summary.success}, Failed: ${summary.failed}, Duplicate: ${summary.duplicate}`
@@ -2080,10 +2083,9 @@ app.post('/api/assignments', async (req, res) => {
     `, [assetId, date || new Date(), `${employeeName} (${department || asset.department})`, actor, `Assigned Qty: ${qty}. ${notes || ''}`]);
 
     await client.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Asset Allocation', $3)
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Asset Allocation', $2)
     `, [
-      new Date().toLocaleString(),
       actor,
       `Allocated ${qty} of asset ${assetId} to ${employeeName}. Prev Available: ${asset.available_quantity}, New Available: ${newAvailableQty}`
     ]);
@@ -2163,10 +2165,9 @@ app.post('/api/assignments/:id/return', async (req, res) => {
     `, [assignment.asset_id, `${assignment.employee_name} (${assignment.department})`, actor, `Returned Qty: ${finalReturnQty}. ${notes || ''}`]);
 
     await client.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Asset Return', $3)
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Asset Return', $2)
     `, [
-      new Date().toLocaleString(),
       actor,
       `Returned ${finalReturnQty} of asset ${assignment.asset_id} from ${assignment.employee_name}. Prev Available: ${asset.available_quantity}, New Available: ${newAvailableQty}`
     ]);
@@ -2259,10 +2260,9 @@ app.patch('/api/assignments/:id', async (req, res) => {
     `, [newAssignedQty, newAvailableQty, newStatus, summaryStr, assignment.asset_id]);
 
     await client.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Asset Assignment Update', $3)
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Asset Assignment Update', $2)
     `, [
-      new Date().toLocaleString(),
       actor,
       `Updated assignment ${id} for asset ${assignment.asset_id}. Quantity changed from ${prevQty} to ${newQty}.`
     ]);
@@ -2688,9 +2688,9 @@ app.post('/api/tickets', async (req, res) => {
     }
 
     await client.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Ticket Creation', $3)
-    `, [new Date().toLocaleString(), user.name || user.username, `Created Ticket ${ticketId} in ${department} department`]);
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Ticket Creation', $2)
+    `, [user.name || user.username, `Created Ticket ${ticketId} in ${department} department`]);
 
     await client.query('COMMIT');
 
@@ -2751,8 +2751,8 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
     const notifId = `NTF-CMT-${ticket.ticket_id}-${Date.now()}`;
     const notifText = `${user.name || user.username} commented on ticket ${ticket.ticket_id}`;
     await db.query(`
-      INSERT INTO notifications (id, text, type, time, read)
-      VALUES ($1, $2, 'info', 'Just now', FALSE)
+      INSERT INTO notifications (id, text, type, read)
+      VALUES ($1, $2, 'info', FALSE)
     `, [notifId, notifText]);
 
     res.status(201).json(commentRes.rows[0]);
@@ -2806,9 +2806,9 @@ app.post('/api/tickets/:id/assign', async (req, res) => {
     `, [ticket.id, user.name || user.username, `Assigned ticket to ${targetName}`]);
 
     await db.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Ticket Assignment', $3)
-    `, [new Date().toLocaleString(), user.name || user.username, `Assigned Ticket ${ticket.ticket_id} to ${targetName}`]);
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Ticket Assignment', $2)
+    `, [user.name || user.username, `Assigned Ticket ${ticket.ticket_id} to ${targetName}`]);
 
     // Keyed on the assignee so a reassignment notifies afresh, but assigning the
     // same person twice does not.
@@ -2876,9 +2876,9 @@ app.patch('/api/tickets/:id/status', async (req, res) => {
     `, [ticket.id, user.name || user.username, `Status changed from ${prevStatus} to ${status}`]);
 
     await db.query(`
-      INSERT INTO system_logs (timestamp, actor, action, detail)
-      VALUES ($1, $2, 'Ticket Status Update', $3)
-    `, [new Date().toLocaleString(), user.name || user.username, `Updated Ticket ${ticket.ticket_id} status from ${prevStatus} to ${status}`]);
+      INSERT INTO system_logs (actor, action, detail)
+      VALUES ($1, 'Ticket Status Update', $2)
+    `, [user.name || user.username, `Updated Ticket ${ticket.ticket_id} status from ${prevStatus} to ${status}`]);
 
     // Resolved and Closed are distinct events with their own wording; moving *out* of
     // either back into an active state is a reopen. Everything else is a plain status

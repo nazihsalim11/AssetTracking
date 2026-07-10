@@ -134,7 +134,8 @@ const seedDatabase = async () => {
     await db.directQuery(`
       CREATE TABLE IF NOT EXISTS system_logs (
         id SERIAL PRIMARY KEY,
-        timestamp VARCHAR(100) NOT NULL,
+        -- Legacy display string, no longer written. created_at is the real instant.
+        timestamp VARCHAR(100),
         actor VARCHAR(255) NOT NULL,
         action VARCHAR(100) NOT NULL,
         detail TEXT,
@@ -148,7 +149,8 @@ const seedDatabase = async () => {
         id VARCHAR(50) PRIMARY KEY,
         text TEXT NOT NULL,
         type VARCHAR(50) NOT NULL DEFAULT 'info',
-        time VARCHAR(50) NOT NULL,
+        -- Legacy display string, no longer written. created_at is the real instant.
+        time VARCHAR(50),
         read BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
@@ -282,10 +284,10 @@ const seedDatabase = async () => {
     if (parseInt(logCheck.rows[0].count) === 0) {
       console.log('Seeding system_logs table...');
       await db.directQuery(`
-        INSERT INTO system_logs (timestamp, actor, action, detail) VALUES
-        ('2026-07-06 09:15 AM', 'Super Admin', 'User Login', 'System session initialized.'),
-        ('2026-07-06 10:20 AM', 'IT Admin', 'Asset Allocation', 'Assigned Dell XPS 15 (AST-001) to Alice Johnson.'),
-        ('2026-07-06 11:45 AM', 'Finance Team', 'Invoice Upload', 'Uploaded NetSupply Invoice INV-107, marked Overdue.');
+        INSERT INTO system_logs (actor, action, detail, created_at) VALUES
+        ('Super Admin', 'User Login', 'System session initialized.', NOW() - INTERVAL '3 hours'),
+        ('IT Admin', 'Asset Allocation', 'Assigned Dell XPS 15 (AST-001) to Alice Johnson.', NOW() - INTERVAL '2 hours'),
+        ('Finance Team', 'Invoice Upload', 'Uploaded NetSupply Invoice INV-107, marked Overdue.', NOW() - INTERVAL '45 minutes');
       `);
     }
 
@@ -306,10 +308,10 @@ const seedDatabase = async () => {
     if (parseInt(notificationCheck.rows[0].count) === 0) {
       console.log('Seeding notifications table...');
       await db.directQuery(`
-        INSERT INTO notifications (id, text, type, time, read) VALUES
-        ('NTF-001', 'Invoice INV-107 from NetSupply Co. is OVERDUE ($3500)', 'error', '2 hours ago', FALSE),
-        ('NTF-002', 'AMC Contract AMC-102 expiring soon (Dell Enterprise Support)', 'warning', '1 day ago', FALSE),
-        ('NTF-003', 'Asset AST-004 (AC Unit) status set to Under Maintenance', 'info', '5 days ago', TRUE);
+        INSERT INTO notifications (id, text, type, read, created_at) VALUES
+        ('NTF-001', 'Invoice INV-107 from NetSupply Co. is OVERDUE ($3500)', 'error', FALSE, NOW() - INTERVAL '2 hours'),
+        ('NTF-002', 'AMC Contract AMC-102 expiring soon (Dell Enterprise Support)', 'warning', FALSE, NOW() - INTERVAL '1 day'),
+        ('NTF-003', 'Asset AST-004 (AC Unit) status set to Under Maintenance', 'info', TRUE, NOW() - INTERVAL '5 days');
       `);
     }
 

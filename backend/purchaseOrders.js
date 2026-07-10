@@ -184,8 +184,8 @@ function register(app, { requireUser }) {
       const po = rows[0];
       await replaceAttachments(client, po.id, attachments, user.name || user.username);
       await client.query(
-        `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1,$2,'Purchase Order Created',$3)`,
-        [new Date().toLocaleString(), user.name || user.username, `Created PO ${po.po_number} for ${po.vendor}`]
+        `INSERT INTO system_logs (actor, action, detail) VALUES ($1,'Purchase Order Created',$2)`,
+        [user.name || user.username, `Created PO ${po.po_number} for ${po.vendor}`]
       );
       await client.query('COMMIT');
       res.status(201).json({ ...mapPo(po), attachments: await loadAttachments(po.id) });
@@ -272,8 +272,8 @@ function register(app, { requireUser }) {
       const { rows } = await db.query('DELETE FROM purchase_orders WHERE id = $1 RETURNING po_number', [req.params.id]);
       if (rows.length === 0) return res.status(404).json({ error: 'Purchase order not found' });
       await db.query(
-        `INSERT INTO system_logs (timestamp, actor, action, detail) VALUES ($1,$2,'Purchase Order Deleted',$3)`,
-        [new Date().toLocaleString(), user.name || user.username, `Deleted PO ${rows[0].po_number}`]
+        `INSERT INTO system_logs (actor, action, detail) VALUES ($1,'Purchase Order Deleted',$2)`,
+        [user.name || user.username, `Deleted PO ${rows[0].po_number}`]
       );
       res.json({ message: `Purchase order ${rows[0].po_number} deleted` });
     } catch (err) {

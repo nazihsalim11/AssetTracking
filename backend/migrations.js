@@ -513,6 +513,17 @@ const runMigrations = async () => {
       ));
     `);
 
+    // Timestamps are now derived from created_at and formatted in the viewer's
+    // timezone. The legacy display-string columns are no longer written:
+    //   notifications.time     always held the literal 'Just now'
+    //   system_logs.timestamp  held new Date().toLocaleString() in the SERVER's timezone
+    // They are only relaxed to NULL here, not dropped, so existing rows keep their
+    // values and this migration stays reversible.
+    await db.directQuery(`
+      ALTER TABLE notifications ALTER COLUMN time DROP NOT NULL;
+      ALTER TABLE system_logs ALTER COLUMN timestamp DROP NOT NULL;
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

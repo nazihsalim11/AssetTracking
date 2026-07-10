@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Mail, MessageSquare, Bell, AlertCircle, CheckCircle2, Clock, MinusCircle } from 'lucide-react';
 import { api } from './api';
+import RelativeTime from './RelativeTime';
 
 const STATUS_STYLE = {
   Sent: { color: 'var(--status-available)', bg: 'var(--status-available-bg)', Icon: CheckCircle2 },
@@ -286,15 +287,15 @@ const NotificationSettingsPage = ({ addToast, currentRole }) => {
                   <tr key={d.id}>
                     <td><StatusBadge status={d.status} /></td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px' }}>{d.channel}</td>
-                    <td style={{ fontSize: '12px' }}>{d.event_type}</td>
-                    <td>{d.recipient_name || '—'}</td>
+                    <td style={{ fontSize: '12px' }}>{d.eventType}</td>
+                    <td>{d.recipientName || '—'}</td>
                     <td style={{ maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         title={d.subject || d.body}>
                       {d.subject || d.body}
                     </td>
                     <td style={{ textAlign: 'center' }}>{d.attempts}</td>
                     <td style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      {new Date(d.created_at).toLocaleString()}
+                      <RelativeTime value={d.createdAt} />
                     </td>
                   </tr>
                 ))
