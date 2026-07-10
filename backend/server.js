@@ -45,6 +45,14 @@ if (allowedOrigins.length > 0) {
 
 app.use(express.json());
 
+// Liveness probe. Unauthenticated and touches no database, so it can serve as a
+// health check for the host, a warm-up ping to wake a sleeping free-tier instance,
+// and the frontend's connectivity test — none of which should need a token or log a
+// 401. Kept before the auth middleware for exactly that reason.
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'assetflow-api', time: new Date().toISOString() });
+});
+
 // Middleware to recursively map snake_case request body keys to camelCase
 function normalizeSnakeToCamel(obj) {
   if (Array.isArray(obj)) {

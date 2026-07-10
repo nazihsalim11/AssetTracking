@@ -127,8 +127,11 @@ export const api = {
   // Test connection
   checkConnection: async () => {
     try {
-      await fetch(`${API_BASE_URL}/assets`, { method: 'HEAD', mode: 'cors' });
-      return true;
+      // Hit the unauthenticated health route, not /assets. The old probe fired a
+      // HEAD at an authenticated endpoint and ignored the status, so it "worked"
+      // only by catching network errors — while logging a 401 on every page load.
+      const response = await fetch(`${API_BASE_URL}/health`, { method: 'GET', mode: 'cors' });
+      return response.ok;
     } catch {
       return false;
     }

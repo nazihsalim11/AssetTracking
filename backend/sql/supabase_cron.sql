@@ -58,12 +58,11 @@ begin
   -- never runs, and the only trace is a 404 in net._http_response.
   --
   -- So: throw one request away to trigger the wake, wait for the cold start, then
-  -- send the real one. The wake request is authenticated too, so a 401 in the log
-  -- is never ambiguous. pg_sleep blocks this cron worker only.
-  perform net.http_post(
-    url := job_url,
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', secret),
-    body := '{}'::jsonb,
+  -- send the real one. The wake request hits the unauthenticated /api/health route
+  -- (no secret needed just to make the instance boot), so a 401 in the log can only
+  -- mean the real job request was misconfigured. pg_sleep blocks this cron worker only.
+  perform net.http_get(
+    url := api_base || '/api/health',
     timeout_milliseconds := 5000
   );
 
