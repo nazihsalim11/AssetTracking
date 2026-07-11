@@ -422,12 +422,19 @@ async function attempt(row) {
 
     // The Email Alerts Inbox reads this table, so mirror outgoing mail into it.
     // Even with a real SMTP server, this keeps the in-app inbox meaningful.
+    //
+    // The inbox is a shared log with no per-recipient column, so we record one entry
+    // per *event*, not per recipient: event_key carries the event identity and the
+    // partial unique index on it makes the second and later recipients of the same
+    // event no-ops here. Otherwise a ticket that legitimately emails 15 admins would
+    // fill the inbox with 15 identical rows. The address still reaches every recipient
+    // via channel.send() above; only the inbox mirror is de-duplicated.
     if (row.channel === 'email') {
       await db.query(
-        `INSERT INTO emails (id, sender, date, subject, body)
-         VALUES ($1, 'AssetFlow Notifications', $2, $3, $4)
-         ON CONFLICT (id) DO NOTHING`,
-        [`EML-${row.id}`, new Date().toLocaleString(), row.subject || '(no subject)', row.body]
+        `INSERT INTO emails (id, sender, date, subject, body, event_key)
+         VALUES ($1, 'AssetFlow Notifications', $2, $3, $4, $5)
+         ON CONFLICT (event_key) WHERE event_key IS NOT NULL DO NOTHING`,
+        [`EML-${row.id}`, new Date().toLocaleString(), row.subject || '(no subject)', row.body, row.event_key]
       );
     }
 

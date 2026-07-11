@@ -1736,46 +1736,11 @@ function App() {
     return canLegacy(rolePermissions, currentRole, action);
   };
 
-  // Auto notification triggers (Warranties / AMC expirations etc.) on mount
-  useEffect(() => {
-    const today = new Date();
-    // Scan warranties expiring soon (within 90 days)
-    assets.forEach(asset => {
-      const expDate = new Date(asset.warrantyExpiry);
-      const diffTime = expDate - today;
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays > 0 && diffDays < 90) {
-        // Trigger notification check if already exists
-        const exists = notifications.some(n => n.text.includes(asset.id) && n.text.includes('Warranty'));
-        if (!exists) {
-          const text = `Warranty expiring in ${diffDays} days for Asset ${asset.id} (${asset.name})`;
-          setNotifications(prev => [
-            { id: `NTF-${Date.now()}`, text, type: "warning", time: "Today", read: false },
-            ...prev
-          ]);
-        }
-      }
-    });
-
-    // Scan AMC contract expirations (within 30 days)
-    amcs.forEach(amc => {
-      const expDate = new Date(amc.endDate);
-      const diffTime = expDate - today;
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays > 0 && diffDays < 30) {
-        const exists = notifications.some(n => n.text.includes(amc.id) && n.text.includes('AMC'));
-        if (!exists) {
-          const text = `AMC Contract ${amc.id} with ${amc.vendor} expires in ${diffDays} days!`;
-          setNotifications(prev => [
-            { id: `NTF-${Date.now() + 1}`, text, type: "error", time: "Today", read: false },
-            ...prev
-          ]);
-        }
-      }
-    });
-  }, [assets, amcs]);
+  // Warranty and AMC expiry alerts are generated server-side by the notification
+  // scheduler (backend/notifications/scheduler.js, driven by cron): one persisted,
+  // per-user, de-duplicated notification per asset/contract. A second client-side
+  // pass here produced a parallel, unpersisted copy of each — the same alert twice
+  // in the bell feed — so it has been removed. See getNotifications on load.
 
   // Handle asset addition
   const handleAddAsset = async (e) => {
@@ -2066,60 +2031,55 @@ function App() {
       }
     }
 
-    let prevEmployee = transferModal.assignedEmployee;
-    let prevDept = transferModal.department;
-    let prevLoc = transferModal.location;
+    // A custody change is not just a rename on the asset: it must move the underlying
+    // asset_assignments rows, or the Active Custodian Registry, employee lookups and
+    // counts (all read from those rows) keep showing the previous holder. That has to
+    // happen atomically on the server, so the transfer now needs a live connection.
+    if (!isApiConnected) {
+      addToast("Not Connected", "Cannot reach the server. The transfer was not saved.", "error");
+      return;
+    }
 
-    const updatedFields = {
-      assignedEmployee: target === 'employee' ? newEmployee : '',
-      department: newDept,
-      location: newLocation,
-      status: target === 'employee' ? 'Assigned' : 'Available'
-    };
+    const prevEmployee = transferModal.assignedEmployee;
+    const prevDept = transferModal.department;
+    const prevLoc = transferModal.location;
+    const destination = target === 'employee' ? `${newEmployee} (${newDept})` : `Dept: ${newDept} (${newLocation})`;
+    const source = prevEmployee ? `${prevEmployee} (${prevDept})` : `Dept: ${prevDept} (${prevLoc})`;
 
     // From here on the button shows a spinner and is disabled. The finally block
     // clears it, so it re-enables on failure and after a successful close alike.
     setIsTransferring(true);
     try {
-      if (isApiConnected) {
-        try {
-          await api.updateAsset(assetId, updatedFields);
-        } catch (err) {
-          addToast("Transfer Failed", err.message || "Failed to transfer asset.", "error");
-          return;
-        }
+      try {
+        // Database first: this endpoint reassigns the custody rows, updates the asset
+        // and records the movement in one transaction.
+        await api.transferAsset(assetId, {
+          targetType: target,
+          employeeName: target === 'employee' ? newEmployee : '',
+          department: newDept,
+          location: newLocation,
+          date,
+          notes
+        });
+      } catch (err) {
+        addToast("Transfer Failed", err.message || "Failed to transfer asset.", "error");
+        return;
       }
 
-      setAssets(prev => prev.map(a => {
-        if (a.id === assetId) {
-          return {
-            ...a,
-            ...updatedFields
-          };
-        }
-        return a;
-      }));
-
-      const destination = target === 'employee' ? `${newEmployee} (${newDept})` : `Dept: ${newDept} (${newLocation})`;
-      const source = prevEmployee ? `${prevEmployee} (${prevDept})` : `Dept: ${prevDept} (${prevLoc})`;
-
-      const newMvt = {
-        id: `MVT-${Date.now()}`,
-        assetId,
-        date,
-        type: "Transfer",
-        from: source,
-        to: destination,
-        actor: currentRole,
-        notes
-      };
-      setMovements(prev => [newMvt, ...prev]);
-      if (isApiConnected) {
-        try {
-          await api.createMovement(newMvt);
-        } catch (err) {
-          console.error("Failed to save movement to DB:", err);
-        }
+      // Then synchronise the frontend: re-read every view the transfer touched so the
+      // registry, movement ledger, asset table, dashboards and employee lookups all
+      // reflect the new custodian without a manual refresh.
+      try {
+        const [updatedAssets, updatedAssignments, updatedMovements] = await Promise.all([
+          api.getAssets(),
+          api.getAssignments(),
+          api.getMovements()
+        ]);
+        setAssets(updatedAssets);
+        setAssignments(updatedAssignments);
+        setMovements(updatedMovements);
+      } catch (err) {
+        console.error("Failed to refresh state after transfer:", err);
       }
 
       await addAuditLog("Asset Transfer", `Transferred ${assetId} from ${source} to ${destination}`);

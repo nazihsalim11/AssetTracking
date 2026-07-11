@@ -2326,6 +2326,161 @@ app.post('/api/assignments', async (req, res) => {
   }
 });
 
+// Custodian transfer / handover.
+//
+// PATCH /assets only rewrites the denormalised assigned_employee string, which left
+// the Active Custodian Registry, employee lookups and assignment history — all read
+// from asset_assignments — pointing at the *previous* holder after a transfer. This
+// endpoint moves the underlying custody rows in the same transaction as the asset
+// update, so every one of those views follows the asset to its new holder the moment
+// the client refetches. The write lands in the database first; the frontend then
+// re-reads assets + assignments + movements to synchronise.
+app.post('/api/assets/:id/transfer', async (req, res) => {
+  const actingUser = await requirePermission(req, res, 'allocations', 'edit');
+  if (!actingUser) return;
+
+  const { id } = req.params;
+  const { targetType, employeeName, department, location, date, notes } = req.body;
+  const actor = req.headers['x-user-username'] || actingUser.username || 'Admin';
+  const when = date || new Date();
+
+  if (targetType !== 'employee' && targetType !== 'department') {
+    return res.status(400).json({ error: 'targetType must be "employee" or "department".' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const assetRes = await client.query('SELECT * FROM assets WHERE id = $1 FOR UPDATE', [id]);
+    if (assetRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const asset = assetRes.rows[0];
+    const prevEmployee = asset.assigned_employee;
+    const prevDept = asset.department;
+    const prevLoc = asset.location;
+    const targetDept = department || asset.department;
+    const targetLoc = location || asset.location;
+
+    // Active custody rows for this asset, locked for the duration.
+    const activeRes = await client.query(
+      `SELECT * FROM asset_assignments WHERE asset_id = $1 AND status = 'Assigned' FOR UPDATE`,
+      [id]
+    );
+    const activeRows = activeRes.rows;
+    const movedQty = activeRows.reduce((sum, r) => sum + (r.quantity || 0), 0);
+
+    let newAssigned = asset.assigned_quantity || 0;
+    let newAvailable = asset.available_quantity || 0;
+    const total = asset.total_quantity || 0;
+
+    if (targetType === 'employee') {
+      if (!employeeName) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'employeeName is required for a custodian transfer.' });
+      }
+      const userRes = await client.query(
+        `SELECT id, name FROM users
+         WHERE status = 'Active' AND (LOWER(TRIM(name)) = LOWER(TRIM($1)) OR LOWER(username) = LOWER($1))`,
+        [String(employeeName)]
+      );
+      if (userRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Employee "${employeeName}" does not exist in the user directory.` });
+      }
+      const newUserId = userRes.rows[0].id;
+      const newName = userRes.rows[0].name;
+
+      if (activeRows.length > 0) {
+        // Reassign every active row to the new custodian in place: quantities and
+        // allocation dates are preserved, only the holder and department change.
+        await client.query(
+          `UPDATE asset_assignments
+             SET employee_name = $1, user_id = $2, department = $3
+           WHERE asset_id = $4 AND status = 'Assigned'`,
+          [newName, newUserId, targetDept, id]
+        );
+      } else {
+        // The asset held no custody row (it was in inventory), so custody is being
+        // established here: create one for the whole available quantity.
+        const qty = Math.max(1, asset.available_quantity || asset.total_quantity || 1);
+        await client.query(
+          `INSERT INTO asset_assignments (asset_id, employee_name, user_id, quantity, department, date, notes, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'Assigned')`,
+          [id, newName, newUserId, qty, targetDept, when, notes || '']
+        );
+        newAssigned = Math.min(total || qty, newAssigned + qty);
+        newAvailable = Math.max(0, (total || qty) - newAssigned);
+      }
+
+      // Recompute the denormalised summary from the live rows.
+      const summaryRes = await client.query(
+        `SELECT employee_name, SUM(quantity) AS qty FROM asset_assignments
+         WHERE asset_id = $1 AND status = 'Assigned' GROUP BY employee_name`,
+        [id]
+      );
+      const summary = summaryRes.rows.map((r) => `${r.employee_name} (${r.qty})`).join(', ');
+      const status = newAvailable === 0 ? 'Assigned' : 'Available';
+
+      await client.query(
+        `UPDATE assets
+           SET assigned_employee = $1, department = $2, location = $3,
+               assigned_quantity = $4, available_quantity = $5, status = $6, updated_at = NOW()
+         WHERE id = $7`,
+        [summary, targetDept, targetLoc, newAssigned, newAvailable, status, id]
+      );
+    } else {
+      // Return to department inventory: close every active custody row and restore
+      // the moved quantity to the available pool.
+      if (activeRows.length > 0) {
+        await client.query(
+          `UPDATE asset_assignments SET status = 'Returned', quantity = 0 WHERE asset_id = $1 AND status = 'Assigned'`,
+          [id]
+        );
+      }
+      newAssigned = Math.max(0, newAssigned - movedQty);
+      newAvailable = total > 0 ? Math.min(total, newAvailable + movedQty) : newAvailable + movedQty;
+      const status = newAvailable > 0 || newAssigned === 0 ? 'Available' : 'Assigned';
+
+      await client.query(
+        `UPDATE assets
+           SET assigned_employee = '', department = $1, location = $2,
+               assigned_quantity = $3, available_quantity = $4, status = $5, updated_at = NOW()
+         WHERE id = $6`,
+        [targetDept, targetLoc, newAssigned, newAvailable, status, id]
+      );
+    }
+
+    const source = prevEmployee ? `${prevEmployee} (${prevDept})` : `Dept: ${prevDept} (${prevLoc})`;
+    const destination = targetType === 'employee'
+      ? `${employeeName} (${targetDept})`
+      : `Dept: ${targetDept} (${targetLoc})`;
+
+    await client.query(
+      `INSERT INTO movements (asset_id, date, type, from_loc, to_loc, actor, notes)
+       VALUES ($1, $2, 'Transfer', $3, $4, $5, $6)`,
+      [id, when, source, destination, actor, notes || '']
+    );
+    await client.query(
+      `INSERT INTO system_logs (actor, action, detail) VALUES ($1, 'Asset Transfer', $2)`,
+      [actor, `Transferred ${id} from ${source} to ${destination}`]
+    );
+
+    await client.query('COMMIT');
+
+    const updated = await db.query('SELECT * FROM assets WHERE id = $1', [id]);
+    res.json({ ok: true, asset: updated.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/assets/:id/transfer failed:', err);
+    res.status(500).json({ error: 'Transfer failed: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/assignments/:id/return', async (req, res) => {
   const actingUser = await requirePermission(req, res, 'allocations', 'edit');
   if (!actingUser) return;

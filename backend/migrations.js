@@ -163,6 +163,18 @@ const runMigrations = async () => {
       CREATE INDEX IF NOT EXISTS notification_deliveries_created_idx ON notification_deliveries (created_at DESC);
     `);
 
+    // The Email Alerts Inbox is a shared, un-scoped log: it has no per-user column, so
+    // mirroring one row per recipient made a single event read as N identical entries
+    // (e.g. a ticket that notifies 15 admins showed 15 times). event_key tags each
+    // mirrored alert with the event it belongs to; a partial unique index then collapses
+    // an event to a single inbox row. NULLs (report/PO emails, which have no event) are
+    // exempt, so those sources keep inserting freely under their own ids.
+    await db.directQuery(`
+      ALTER TABLE emails ADD COLUMN IF NOT EXISTS event_key TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS emails_event_key_idx
+        ON emails (event_key) WHERE event_key IS NOT NULL;
+    `);
+
     // Global channel switches. Single row, id = 1.
     await db.directQuery(`
       CREATE TABLE IF NOT EXISTS notification_settings (

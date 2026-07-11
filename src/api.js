@@ -150,6 +150,9 @@ export const api = {
   getAssets: () => apiFetch('/assets'),
   createAsset: (asset) => apiFetch('/assets', { method: 'POST', body: JSON.stringify(camelToSnake(asset)) }),
   updateAsset: (id, fields) => apiFetch(`/assets/${id}`, { method: 'PATCH', body: JSON.stringify(camelToSnake(fields)) }),
+  // Custodian handover: moves the underlying asset_assignments rows so the registry
+  // and employee lookups follow the asset. Returns the updated asset.
+  transferAsset: (id, payload) => apiFetch(`/assets/${id}/transfer`, { method: 'POST', body: JSON.stringify(camelToSnake(payload)) }),
   deleteAsset: (id) => apiFetch(`/assets/${id}`, { method: 'DELETE' }),
   bulkDeleteAssets: (assetIds) => apiFetch('/assets/bulk/delete', { method: 'POST', body: JSON.stringify({ assetIds }) }),
   bulkUpdateAssetsStatus: (assetIds, status) => apiFetch('/assets/bulk/status', { method: 'POST', body: JSON.stringify({ assetIds, status }) }),
