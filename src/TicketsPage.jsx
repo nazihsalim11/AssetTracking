@@ -47,6 +47,7 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
   const [isInternalComment, setIsInternalComment] = useState(false);
   const [slaTick, setSlaTick] = useState(Date.now());
   const [isFiling, setIsFiling] = useState(false);
+  const [slaPreview, setSlaPreview] = useState(null);
 
   // Search, views, filter states
   const [selectedView, setSelectedView] = useState('all');
@@ -145,6 +146,22 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
     }, 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // Live SLA preview while filing a ticket: ask the server which policy would apply and
+  // what deadlines it would set, so the requester sees the real, database-driven SLA.
+  useEffect(() => {
+    if (!showCreateModal) { setSlaPreview(null); return; }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const preview = await api.previewSla({ priority, category, department: ticketDepartment });
+        if (!cancelled) setSlaPreview(preview);
+      } catch {
+        if (!cancelled) setSlaPreview(null);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [showCreateModal, priority, category, ticketDepartment]);
 
   // Reset pagination on search / filter / view updates
   useEffect(() => {
@@ -548,6 +565,111 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
       <span className={`sla-badge ${hours <= 4 ? 'urgent' : hours <= 12 ? 'pending' : 'good'}`}>
         {hours}h {minutes}m left
       </span>
+    );
+  };
+
+  // Remaining time to a deadline as a compact "Xh Ym" / "Xd Yh" / "Overdue" label. The
+  // deadline was already computed against business hours by the server, so a plain
+  // wall-clock countdown to it is correct.
+  const formatCountdown = (deadlineStr) => {
+    const deadline = parseTimestamp(deadlineStr);
+    if (!deadline) return { label: '—', tone: 'muted' };
+    const diff = deadline.getTime() - slaTick;
+    if (diff < 0) {
+      const over = Math.abs(diff);
+      const oh = Math.floor(over / 3600000), om = Math.floor((over % 3600000) / 60000);
+      return { label: `Overdue by ${oh >= 24 ? `${Math.floor(oh / 24)}d ` : ''}${oh % 24}h ${om}m`, tone: 'urgent' };
+    }
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+    const label = h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h left` : `${h}h ${m}m left`;
+    return { label, tone: h <= 4 ? 'urgent' : h <= 12 ? 'pending' : 'good' };
+  };
+
+  const TRIGGER_LABELS = {
+    response_percent: '% of response time', resolution_percent: '% of resolution time',
+    response_remaining: 'min response remaining', resolution_remaining: 'min resolution remaining',
+    response_breach: 'on response breach', resolution_breach: 'on resolution breach'
+  };
+  const TARGET_LABELS = {
+    assignee: 'Assigned Technician', team_lead: 'Team Lead',
+    department_manager: 'Department Manager', it_admin: 'IT Administrator', super_admin: 'Super Admin'
+  };
+  const SLA_STATE_LABELS = { on_track: 'On Track', breached: 'Breached', met: 'Met', at_risk: 'At Risk' };
+
+  // SLA tracking panel for the ticket workspace sidebar: policy, both deadlines with a
+  // live countdown, first-response state, escalation status and the escalation ladder.
+  const renderSlaPanel = (t) => {
+    const closed = t.status === 'Resolved' || t.status === 'Closed';
+    const respDue = t.firstResponseDue;
+    const resDue = t.resolutionDue || t.slaDeadline;
+    const respCountdown = formatCountdown(respDue);
+    const resCountdown = formatCountdown(resDue);
+    const responded = !!t.firstResponseAt;
+    const state = t.slaStatus || (t.resolutionBreached ? 'breached' : 'on_track');
+
+    const Row = ({ label, children }) => (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '12px' }}>
+        <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+        <span style={{ fontWeight: 600, textAlign: 'right' }}>{children}</span>
+      </div>
+    );
+
+    return (
+      <div className="card" style={{ padding: '20px' }}>
+        <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <ShieldCheck size={14} /> SLA Tracking
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <Row label="SLA Policy">{t.slaPolicy ? t.slaPolicy.name : (t.slaPolicyId ? `Policy #${t.slaPolicyId}` : 'No policy matched')}</Row>
+          {t.slaPolicy?.calendarName && <Row label="Calendar">{t.slaPolicy.calendarName}</Row>}
+          <Row label="SLA Status">
+            <span className={`sla-badge ${state === 'breached' ? 'urgent' : state === 'met' ? 'good' : 'pending'}`}>
+              {SLA_STATE_LABELS[state] || state}
+            </span>
+          </Row>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', margin: '4px 0' }} />
+
+          <Row label="First Response">
+            {responded
+              ? <span style={{ color: t.responseBreached ? 'var(--status-disposed)' : 'var(--status-available)' }}>{t.responseBreached ? 'Late' : 'Met'}</span>
+              : respDue ? <span className={`sla-badge ${respCountdown.tone}`}>{respCountdown.label}</span> : '—'}
+          </Row>
+          <Row label="Response Due">{respDue ? <RelativeTime value={respDue} /> : '—'}</Row>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', margin: '4px 0' }} />
+
+          <Row label="Resolution">
+            {closed
+              ? <span style={{ color: t.resolutionBreached ? 'var(--status-disposed)' : 'var(--status-available)' }}>{t.resolutionBreached ? 'Breached' : 'Met'}</span>
+              : resDue ? <span className={`sla-badge ${resCountdown.tone}`}>{resCountdown.label}</span> : '—'}
+          </Row>
+          <Row label="Resolution Due">{resDue ? <RelativeTime value={resDue} /> : '—'}</Row>
+
+          <Row label="Escalation">
+            {t.escalationLevel > 0
+              ? <span style={{ color: 'var(--status-disposed)', fontWeight: 700 }}>Level {t.escalationLevel}</span>
+              : <span style={{ color: 'var(--text-muted)' }}>None</span>}
+          </Row>
+
+          {t.slaPolicy?.escalationLevels?.length > 0 && (
+            <details style={{ marginTop: '4px' }}>
+              <summary style={{ fontSize: '11px', color: 'var(--text-muted)', cursor: 'pointer' }}>Escalation ladder</summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                {t.slaPolicy.escalationLevels.map((lvl) => (
+                  <div key={lvl.level} style={{ fontSize: '11px', display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 8px', background: 'var(--bg-sidebar)', borderRadius: 'var(--radius-sm)', opacity: t.escalationLevel >= lvl.level ? 1 : 0.6 }}>
+                    <span style={{ fontWeight: 700 }}>L{lvl.level}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {lvl.triggerType.includes('breach') ? '' : `${lvl.threshold} `}{TRIGGER_LABELS[lvl.triggerType] || lvl.triggerType}
+                    </span>
+                    <span>→ {TARGET_LABELS[lvl.notifyTarget] || lvl.notifyTarget}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
     );
   };
 
@@ -1288,6 +1410,9 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                 </div>
               </div>
 
+              {/* SLA tracking (database-driven policy, deadlines, escalation) */}
+              {renderSlaPanel(activeTicket)}
+
               {/* Employee self-close or reopen */}
               {activeTicket.status === 'Resolved' && (
                 <button
@@ -1364,10 +1489,25 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
                   <label className="form-label">Priority Impact Level *</label>
                   <CustomSelect value={priority} onChange={e => setPriority(e.target.value)} required
                     options={[
-                      { value: 'Critical', label: 'Level 1 (Critical) - 10h SLA Resolution' },
-                      { value: 'Medium', label: 'Level 2 (Medium) - 24h SLA Resolution' },
-                      { value: 'Low', label: 'Level 3 (Low) - 48h SLA Resolution' }
+                      { value: 'Critical', label: 'Critical — highest urgency' },
+                      { value: 'High', label: 'High' },
+                      { value: 'Medium', label: 'Medium' },
+                      { value: 'Low', label: 'Low' }
                     ]} />
+                  {/* Live SLA preview: the deadlines the configured policies would set for
+                      this ticket. No hardcoded hours — this reads the database. */}
+                  {slaPreview && (
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {slaPreview.matched ? (
+                        <>
+                          <span><ShieldCheck size={11} style={{ verticalAlign: '-1px' }} /> SLA policy: <strong>{slaPreview.matched.name}</strong></span>
+                          <span>First response due: <strong><RelativeTime value={slaPreview.firstResponseDue} /></strong> · Resolution due: <strong><RelativeTime value={slaPreview.resolutionDue} /></strong></span>
+                        </>
+                      ) : (
+                        <span>No SLA policy matches this combination — a default 24h target will apply.</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">

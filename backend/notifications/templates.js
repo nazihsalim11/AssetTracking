@@ -118,6 +118,33 @@ const templates = {
     sms: `AssetFlow: ticket ${c.ticketId} ESCALATED, SLA breached by ${plural(c.hoursOverdue, 'hour')}`
   }),
 
+  'ticket.escalation_level': (c) => ({
+    type: 'error',
+    subject: `[${c.ticketId}] Escalated to level ${c.level}`,
+    inApp: `Ticket ${c.ticketId} escalated to level ${c.level} — ${c.targetLabel}`,
+    email:
+      `Ticket ${c.ticketId} ("${c.subject}") has reached SLA escalation level ${c.level}.\n\n` +
+      `Department: ${c.department}\n` +
+      `Priority:   ${c.priority}\n` +
+      `Assigned:   ${c.assignedToName || 'Unassigned'}\n` +
+      `Resolution due: ${fmtDate(c.resolutionDue)}\n` +
+      `Escalated to: ${c.targetLabel}\n\n` +
+      `Recommended action: intervene to keep this ticket within its SLA.\n\n— AssetFlow Service Desk`,
+    sms: `AssetFlow: ticket ${c.ticketId} escalated to level ${c.level} (${c.targetLabel})`
+  }),
+
+  'ticket.reassigned': (c) => ({
+    type: 'info',
+    subject: `[${c.ticketId}] Reassigned to ${c.assignedToName}`,
+    inApp: `Ticket ${c.ticketId} reassigned from ${c.previousAssigneeName || 'previous agent'} to ${c.assignedToName}`,
+    email:
+      `Ticket ${c.ticketId} ("${c.subject}") has been reassigned.\n\n` +
+      `From: ${c.previousAssigneeName || 'previous agent'}\n` +
+      `To:   ${c.assignedToName}\n` +
+      `By:   ${c.actorName}\n\n— AssetFlow Service Desk`,
+    sms: `AssetFlow: ticket ${c.ticketId} reassigned to ${c.assignedToName}`
+  }),
+
   'ticket.sla_approaching': (c) => ({
     type: 'warning',
     subject: `[${c.ticketId}] SLA due in ${plural(c.hoursRemaining, 'hour')}`,

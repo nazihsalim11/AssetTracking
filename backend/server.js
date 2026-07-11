@@ -14,6 +14,12 @@ const { registerCronRoutes } = require('./cronRoutes');
 const permissionModel = require('./permissionModel');
 const knowledgeBase = require('./knowledgeBase');
 const purchaseOrders = require('./purchaseOrders');
+const slaModel = require('./slaModel');
+const slaEngine = require('./slaEngine');
+const slaRoutes = require('./slaRoutes');
+const slaAssignment = require('./slaAssignment');
+const dashboards = require('./dashboards');
+const reports = require('./reports');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -2511,7 +2517,24 @@ const mapTicket = (row) => ({
   // Wall-clock hours from creation to resolution, for the tracking panel.
   resolutionHours: row.resolved_at
     ? Math.max(0, Math.round((new Date(row.resolved_at) - new Date(row.created_at)) / 36e5 * 10) / 10)
-    : null
+    : null,
+  // Database-driven SLA tracking.
+  slaPolicyId: row.sla_policy_id || null,
+  branch: row.branch || null,
+  assetType: row.asset_type || null,
+  firstResponseDue: row.first_response_due || null,
+  resolutionDue: row.resolution_due || row.sla_deadline || null,
+  firstResponseAt: row.first_response_at || null,
+  responseBreached: row.response_breached || false,
+  resolutionBreached: row.resolution_breached || false,
+  escalationLevel: row.escalation_level || 0,
+  slaStatus: slaEngine.slaStatus({
+    status: row.status,
+    resolutionDue: row.resolution_due || row.sla_deadline,
+    firstResponseDue: row.first_response_due,
+    firstResponseAt: row.first_response_at,
+    resolvedAt: row.resolved_at
+  }).state
 });
 
 const mapComment = (row) => ({
@@ -2814,8 +2837,32 @@ app.get('/api/tickets/:id', async (req, res) => {
     const timelineRes = await db.query('SELECT * FROM ticket_timeline WHERE ticket_id = $1 ORDER BY created_at ASC', [ticket.id]);
     const attachmentsRes = await db.query('SELECT * FROM ticket_attachments WHERE ticket_id = $1 ORDER BY created_at ASC', [ticket.id]);
 
+    // SLA policy detail for the tracking panel — the governing policy's name and its
+    // escalation ladder, so the ticket workspace can show what SLA is in force.
+    let slaPolicy = null;
+    if (ticket.sla_policy_id) {
+      const polRes = await db.query(
+        `SELECT p.id, p.name, p.first_response_minutes, p.resolution_minutes, c.name AS calendar_name,
+                COALESCE((SELECT json_agg(e ORDER BY e.level) FROM sla_escalation_levels e WHERE e.policy_id = p.id), '[]') AS escalation_levels
+         FROM sla_policies p LEFT JOIN business_calendars c ON c.id = p.calendar_id
+         WHERE p.id = $1`,
+        [ticket.sla_policy_id]
+      );
+      if (polRes.rows.length) {
+        const p = polRes.rows[0];
+        slaPolicy = {
+          id: p.id, name: p.name, calendarName: p.calendar_name,
+          firstResponseMinutes: p.first_response_minutes, resolutionMinutes: p.resolution_minutes,
+          escalationLevels: (p.escalation_levels || []).map((e) => ({
+            level: e.level, triggerType: e.trigger_type, threshold: Number(e.threshold), notifyTarget: e.notify_target
+          }))
+        };
+      }
+    }
+
     res.json({
       ...mapTicket(ticket),
+      slaPolicy,
       comments: commentsRes.rows.map(mapComment),
       timeline: timelineRes.rows.map(mapTimeline),
       attachments: attachmentsRes.rows.map(mapAttachment)
@@ -2846,12 +2893,27 @@ app.post('/api/tickets', async (req, res) => {
     return res.status(400).json({ error: `Department must be one of: ${knowledgeBase.HELPDESK_DEPARTMENTS.join(', ')}` });
   }
 
-  let slaHours = 24;
-  if (priority === 'Critical') slaHours = 10;
-  else if (priority === 'Low') slaHours = 48;
-
-  const slaDeadline = new Date();
-  slaDeadline.setHours(slaDeadline.getHours() + slaHours);
+  // SLA deadlines are now database-driven: match the ticket to the most specific
+  // active policy and walk that policy's business calendar. computeDeadlines never
+  // throws — an unmatched ticket falls back to a 24h wall-clock resolution — so ticket
+  // creation cannot be blocked by SLA configuration.
+  // createTicket() snake-cases its body, so assetType arrives as asset_type; accept both.
+  const branch = req.body.branch || null;
+  const assetType = req.body.assetType || req.body.asset_type || null;
+  const createdAt = new Date();
+  let sla;
+  try {
+    sla = await slaModel.computeDeadlines(
+      { priority, category: category || 'Software', department, assetType, branch },
+      createdAt
+    );
+  } catch (slaErr) {
+    console.error('[sla] deadline computation failed, defaulting to 24h:', slaErr.message);
+    sla = { policyId: null, firstResponseDue: null, resolutionDue: new Date(createdAt.getTime() + 24 * 3600 * 1000) };
+  }
+  // sla_deadline is kept in sync with resolution_due so the existing analytics and
+  // breach scheduler (which read sla_deadline) keep working unchanged.
+  const slaDeadline = sla.resolutionDue;
 
   const client = await db.pool.connect();
   try {
@@ -2860,13 +2922,15 @@ app.post('/api/tickets', async (req, res) => {
     // `category` was previously accepted from the client and then silently dropped
     // from the INSERT, so every ticket fell back to the column default.
     const insertQuery = `
-      INSERT INTO tickets (subject, description, department, priority, status, created_by, created_by_name, sla_deadline, ticket_id, category, ticket_type)
-      VALUES ($1, $2, $3, $4, 'Open', $5, $6, $7, '', $8, $9)
+      INSERT INTO tickets (subject, description, department, priority, status, created_by, created_by_name, sla_deadline, ticket_id, category, ticket_type,
+                           sla_policy_id, first_response_due, resolution_due, branch, asset_type)
+      VALUES ($1, $2, $3, $4, 'Open', $5, $6, $7, '', $8, $9, $10, $11, $12, $13, $14)
       RETURNING *;
     `;
     const result = await client.query(insertQuery, [
       subject, description, department, priority, user.id, user.name || user.username, slaDeadline,
-      category || 'Software', ticketType
+      category || 'Software', ticketType,
+      sla.policyId, sla.firstResponseDue, sla.resolutionDue, branch, assetType
     ]);
     const ticket = result.rows[0];
 
@@ -2883,6 +2947,35 @@ app.post('/api/tickets', async (req, res) => {
       INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail)
       VALUES ($1, $2, 'Created', 'Ticket created by employee')
     `, [ticket.id, user.name || user.username]);
+
+    // Automatic technician assignment, if the governing policy asks for it. Done inside
+    // the same transaction so a created ticket is never briefly unassigned; the
+    // notification is fired after COMMIT. Failure here must not fail ticket creation.
+    let autoAssigned = null;
+    if (sla.policy && sla.policy.auto_assign_enabled) {
+      try {
+        const agent = await slaAssignment.pickAgent(
+          { department }, sla.policy.auto_assign_strategy, client
+        );
+        if (agent) {
+          const agentName = agent.name || agent.username;
+          await client.query(
+            `UPDATE tickets SET assigned_to = $1, assigned_to_name = $2, status = 'In Progress', updated_at = NOW() WHERE id = $3`,
+            [agent.id, agentName, ticket.id]
+          );
+          ticket.assigned_to = agent.id;
+          ticket.assigned_to_name = agentName;
+          ticket.status = 'In Progress';
+          await client.query(
+            `INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail) VALUES ($1, 'System', 'Assigned', $2)`,
+            [ticket.id, `Auto-assigned to ${agentName} (${sla.policy.auto_assign_strategy.replace('_', ' ')}, ${agent.workload} open ticket(s))`]
+          );
+          autoAssigned = { id: agent.id, name: agentName };
+        }
+      } catch (assignErr) {
+        console.error('[sla] auto-assignment failed:', assignErr.message);
+      }
+    }
 
     if (Array.isArray(attachments)) {
       for (const att of attachments) {
@@ -2909,6 +3002,14 @@ app.post('/api/tickets', async (req, res) => {
       createdByName: user.name || user.username,
       slaDeadline
     });
+
+    // Tell the auto-assigned technician (and the requester) about the assignment.
+    if (autoAssigned) {
+      notifications.notify('ticket.assigned', `ticket-assigned:${ticket.id}:${autoAssigned.id}`, {
+        ticketId, subject, department, priority, slaDeadline,
+        assignedTo: autoAssigned.id, assignedToName: autoAssigned.name, createdBy: user.id
+      });
+    }
 
     res.status(201).json(mapTicket(ticket));
   } catch (err) {
@@ -2953,6 +3054,19 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
       INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail)
       VALUES ($1, $2, 'Comment Added', $3)
     `, [ticket.id, user.name || user.username, isInt ? 'Added internal comment' : 'Added public comment']);
+
+    // First response: the earliest public reply from someone other than the requester
+    // stops the response-SLA clock. Internal notes and the requester's own comments do
+    // not count. Recorded once.
+    if (!ticket.first_response_at && !isInt && user.id !== ticket.created_by) {
+      await db.query(
+        `UPDATE tickets
+         SET first_response_at = NOW(),
+             response_breached = (first_response_due IS NOT NULL AND NOW() > first_response_due)
+         WHERE id = $1 AND first_response_at IS NULL`,
+        [ticket.id]
+      );
+    }
 
     const notifId = `NTF-CMT-${ticket.ticket_id}-${Date.now()}`;
     const notifText = `${user.name || user.username} commented on ticket ${ticket.ticket_id}`;
@@ -3000,6 +3114,11 @@ app.post('/api/tickets/:id/assign', async (req, res) => {
       targetId = user.id;
     }
 
+    // A reassignment is moving an already-assigned ticket to a different agent, as
+    // opposed to a first assignment. The previous assignee should hear that it left them.
+    const previousAssignee = ticket.assigned_to;
+    const isReassignment = previousAssignee && previousAssignee !== targetId;
+
     await db.query(`
       UPDATE tickets
       SET assigned_to = $1, assigned_to_name = $2, status = 'In Progress', updated_at = NOW()
@@ -3009,7 +3128,7 @@ app.post('/api/tickets/:id/assign', async (req, res) => {
     await db.query(`
       INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail)
       VALUES ($1, $2, 'Assigned', $3)
-    `, [ticket.id, user.name || user.username, `Assigned ticket to ${targetName}`]);
+    `, [ticket.id, user.name || user.username, isReassignment ? `Reassigned ticket from ${ticket.assigned_to_name || 'previous agent'} to ${targetName}` : `Assigned ticket to ${targetName}`]);
 
     await db.query(`
       INSERT INTO system_logs (actor, action, detail)
@@ -3028,6 +3147,21 @@ app.post('/api/tickets/:id/assign', async (req, res) => {
       assignedToName: targetName,
       createdBy: ticket.created_by
     });
+
+    if (isReassignment) {
+      // Keyed on the pair so each distinct hand-off notifies once.
+      notifications.notify('ticket.reassigned', `ticket-reassigned:${ticket.id}:${previousAssignee}:${targetId}`, {
+        ticketId: ticket.ticket_id,
+        subject: ticket.subject,
+        department: ticket.department,
+        priority: ticket.priority,
+        previousAssignee,
+        previousAssigneeName: ticket.assigned_to_name,
+        assignedTo: targetId,
+        assignedToName: targetName,
+        actorName: user.name || user.username
+      });
+    }
 
     res.json({ message: 'Ticket assigned successfully', assignedToName: targetName });
   } catch (err) {
@@ -3230,31 +3364,18 @@ app.post('/api/tickets/:id/auto-assign', async (req, res) => {
     if (ticketRes.rows.length === 0) return res.status(404).json({ error: 'Ticket not found' });
     const ticket = ticketRes.rows[0];
 
-    const agentsRes = await db.query(`
-      SELECT id, name, username, department FROM users 
-      WHERE role IN ('Super Admin', 'IT Admin', 'Facility Admin', 'Finance Team', 'Auditor')
-    `);
-
-    let eligibleAgents = agentsRes.rows.filter(a => a.department === ticket.department);
-    if (eligibleAgents.length === 0) {
-      eligibleAgents = agentsRes.rows;
+    // Honour the governing policy's strategy if it has one (e.g. round robin); default
+    // to least-loaded, which is what the "Auto-Assign (Workload)" button implies.
+    let strategy = 'least_loaded';
+    if (ticket.sla_policy_id) {
+      const polRes = await db.query('SELECT auto_assign_strategy FROM sla_policies WHERE id = $1', [ticket.sla_policy_id]);
+      if (polRes.rows.length && polRes.rows[0].auto_assign_strategy) strategy = polRes.rows[0].auto_assign_strategy;
     }
 
-    if (eligibleAgents.length === 0) {
+    const chosenAgent = await slaAssignment.pickAgent({ department: ticket.department }, strategy);
+    if (!chosenAgent) {
       return res.status(400).json({ error: 'No eligible agents found for auto-assignment.' });
     }
-
-    const workloadCounts = {};
-    for (const agent of eligibleAgents) {
-      const activeTicketsRes = await db.query(`
-        SELECT COUNT(*) FROM tickets 
-        WHERE assigned_to = $1 AND status IN ('Open', 'In Progress', 'Pending', 'On Hold', 'Reopened')
-      `, [agent.id]);
-      workloadCounts[agent.id] = parseInt(activeTicketsRes.rows[0].count);
-    }
-
-    eligibleAgents.sort((a, b) => workloadCounts[a.id] - workloadCounts[b.id]);
-    const chosenAgent = eligibleAgents[0];
 
     const targetName = chosenAgent.name || chosenAgent.username;
     const targetId = chosenAgent.id;
@@ -3268,7 +3389,7 @@ app.post('/api/tickets/:id/auto-assign', async (req, res) => {
     await db.query(`
       INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail)
       VALUES ($1, $2, 'Assigned', $3)
-    `, [ticket.id, user.name || user.username, `Auto-assigned ticket to ${targetName} based on workload (${workloadCounts[targetId]} active tickets)`]);
+    `, [ticket.id, user.name || user.username, `Auto-assigned ticket to ${targetName} (${strategy.replace('_', ' ')}, ${chosenAgent.workload} active ticket(s))`]);
 
     notifications.notify('ticket.assigned', `ticket-assigned:${ticket.id}:${targetId}`, {
       ticketId: ticket.ticket_id,
@@ -3945,7 +4066,7 @@ app.post('/api/files/signed-url', async (req, res) => {
 const INTERNAL_CRON_ENABLED = process.env.DISABLE_INTERNAL_CRON !== 'true';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
-registerCronRoutes(app, { scheduler, notifications, secret: CRON_SECRET });
+registerCronRoutes(app, { scheduler, notifications, reports, secret: CRON_SECRET });
 
 if (INTERNAL_CRON_ENABLED) {
   const runStartupChecks = async () => {
@@ -3960,6 +4081,9 @@ if (INTERNAL_CRON_ENABLED) {
   cron.schedule('*/15 * * * *', () => {                            // retry failed sends
     notifications.retryFailed().catch((err) => console.error('Notification retry failed:', err));
   });
+  cron.schedule('0 6 * * *', () => {                               // 06:00 daily: email due reports
+    reports.runDueScheduledReports().catch((err) => console.error('Scheduled reports failed:', err));
+  });
 } else if (!CRON_SECRET) {
   // Loud, because the alternative is a deployment where nothing is scheduled at all
   // and the first anyone hears of it is a missed SLA.
@@ -3972,6 +4096,9 @@ if (INTERNAL_CRON_ENABLED) {
 // Registered before the catch-all so its routes are reachable.
 knowledgeBase.register(app, { requireUser });
 purchaseOrders.register(app, { requirePermission, requireUser, roleCan });
+slaRoutes.register(app, { requireUser, requirePermission });
+dashboards.register(app, { requirePermission });
+reports.register(app, { requireUser, requirePermission });
 
 // --- 404 handler for unmatched API routes (JSON, not Express's default HTML page) ---
 app.use('/api', (req, res) => {

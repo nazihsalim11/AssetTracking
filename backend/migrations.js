@@ -734,6 +734,172 @@ const runMigrations = async () => {
       CREATE INDEX IF NOT EXISTS po_documents_po_idx ON purchase_order_documents (purchase_order_id);
     `);
 
+    // 12. SLA Management.
+    //
+    //   - business_calendars: working days/hours + a fixed UTC offset that the SLA
+    //     engine walks to turn "resolution in 480 minutes" into a real deadline that
+    //     only counts business time. is_24x7 short-circuits the walk.
+    //   - calendar_holidays: dates the engine treats like weekends.
+    //   - sla_policies: the configurable matching rules. Any of priority/category/
+    //     department/asset_type/branch may be NULL ("any"); the most specific matching
+    //     policy wins (see slaEngine.matchPolicy). Times are stored in minutes.
+    //   - sla_escalation_levels: ordered levels per policy, each firing on an elapsed
+    //     percentage, remaining minutes, or a breach, and notifying a configured target.
+    //   - tickets gains per-ticket SLA tracking so deadlines survive later policy edits.
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS business_calendars (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        description TEXT,
+        is_24x7 BOOLEAN NOT NULL DEFAULT FALSE,
+        utc_offset_minutes INT NOT NULL DEFAULT 330,
+        work_start VARCHAR(5) NOT NULL DEFAULT '09:00',
+        work_end VARCHAR(5) NOT NULL DEFAULT '18:00',
+        working_days INT[] NOT NULL DEFAULT '{1,2,3,4,5}',
+        branch VARCHAR(120),
+        is_default BOOLEAN NOT NULL DEFAULT FALSE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS business_calendars_name_lower_idx ON business_calendars (LOWER(name));
+    `);
+
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS calendar_holidays (
+        id SERIAL PRIMARY KEY,
+        calendar_id INT NOT NULL REFERENCES business_calendars(id) ON DELETE CASCADE,
+        holiday_date DATE NOT NULL,
+        name VARCHAR(160),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS calendar_holidays_unique_idx ON calendar_holidays (calendar_id, holiday_date);
+    `);
+
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS sla_policies (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(160) NOT NULL,
+        description TEXT,
+        priority VARCHAR(50),
+        category VARCHAR(100),
+        department VARCHAR(100),
+        asset_type VARCHAR(100),
+        branch VARCHAR(120),
+        first_response_minutes INT NOT NULL DEFAULT 240,
+        resolution_minutes INT NOT NULL DEFAULT 1440,
+        calendar_id INT REFERENCES business_calendars(id) ON DELETE SET NULL,
+        auto_assign_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        auto_assign_strategy VARCHAR(30) NOT NULL DEFAULT 'least_loaded',
+        priority_rank INT NOT NULL DEFAULT 0,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        archived BOOLEAN NOT NULL DEFAULT FALSE,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS sla_policies_active_idx ON sla_policies (active, archived);
+    `);
+
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS sla_escalation_levels (
+        id SERIAL PRIMARY KEY,
+        policy_id INT NOT NULL REFERENCES sla_policies(id) ON DELETE CASCADE,
+        level INT NOT NULL,
+        trigger_type VARCHAR(30) NOT NULL DEFAULT 'resolution_percent',
+        threshold NUMERIC(8,2) NOT NULL DEFAULT 0,
+        notify_target VARCHAR(30) NOT NULL DEFAULT 'assignee',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS sla_escalation_levels_unique_idx ON sla_escalation_levels (policy_id, level);
+    `);
+
+    await db.directQuery(`
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_policy_id INT REFERENCES sla_policies(id) ON DELETE SET NULL;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS first_response_due TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_due TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS first_response_at TIMESTAMP WITH TIME ZONE;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_breached BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_breached BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_level INT NOT NULL DEFAULT 0;
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS branch VARCHAR(120);
+      ALTER TABLE tickets ADD COLUMN IF NOT EXISTS asset_type VARCHAR(100);
+    `);
+
+    // Backfill resolution_due from the legacy sla_deadline so existing tickets show a
+    // deadline in the new tracking panel without a rebuild.
+    await db.directQuery(`
+      UPDATE tickets SET resolution_due = sla_deadline WHERE resolution_due IS NULL AND sla_deadline IS NOT NULL;
+    `);
+
+    // Seed a default business calendar and a starter set of policies, once. These
+    // reproduce the previous hardcoded behaviour (Critical 10h, default 24h, Low 48h)
+    // but now as editable, database-driven rows measured against business hours.
+    const calCount = await db.directQuery('SELECT COUNT(*)::int AS c FROM business_calendars');
+    if (calCount.rows[0].c === 0) {
+      const cal = await db.directQuery(`
+        INSERT INTO business_calendars (name, description, is_24x7, is_default, work_start, work_end)
+        VALUES ('Standard Business Hours', 'Mon–Fri, 09:00–18:00 (IST). The default calendar for all SLA policies.', FALSE, TRUE, '09:00', '18:00')
+        RETURNING id
+      `);
+      const calId = cal.rows[0].id;
+      await db.directQuery(`
+        INSERT INTO business_calendars (name, description, is_24x7, is_default, work_start, work_end)
+        VALUES ('24x7', 'Round-the-clock cover for critical infrastructure. SLA timers never pause.', TRUE, FALSE, '00:00', '23:59')
+      `);
+
+      const policyCount = await db.directQuery('SELECT COUNT(*)::int AS c FROM sla_policies');
+      if (policyCount.rows[0].c === 0) {
+        // (name, priority, first_response_minutes, resolution_minutes, priority_rank)
+        const seeds = [
+          ['Critical Priority', 'Critical', 30, 600, 30],
+          ['High Priority', 'High', 60, 720, 20],
+          ['Medium Priority', 'Medium', 120, 1440, 10],
+          ['Low Priority', 'Low', 240, 2880, 5],
+          ['Default', null, 240, 1440, 0]
+        ];
+        for (const [name, priority, fr, res, rank] of seeds) {
+          const p = await db.directQuery(
+            `INSERT INTO sla_policies (name, priority, first_response_minutes, resolution_minutes, calendar_id, priority_rank, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, 'System') RETURNING id`,
+            [name, priority, fr, res, calId, rank]
+          );
+          const policyId = p.rows[0].id;
+          // A sensible four-level escalation ladder for every seeded policy.
+          await db.directQuery(
+            `INSERT INTO sla_escalation_levels (policy_id, level, trigger_type, threshold, notify_target) VALUES
+               ($1, 1, 'resolution_percent', 50, 'assignee'),
+               ($1, 2, 'resolution_percent', 75, 'team_lead'),
+               ($1, 3, 'resolution_percent', 90, 'department_manager'),
+               ($1, 4, 'resolution_breach', 0, 'super_admin')`,
+            [policyId]
+          );
+        }
+      }
+    }
+
+    // 13. Scheduled reports: a report key + saved filters + a delivery cadence and
+    //     recipient list. The daily job (reports.runDueScheduledReports) generates each
+    //     due report and emails it, then advances next_run.
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS scheduled_reports (
+        id SERIAL PRIMARY KEY,
+        report_key VARCHAR(60) NOT NULL,
+        name VARCHAR(160),
+        filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+        frequency VARCHAR(20) NOT NULL DEFAULT 'weekly',
+        recipients TEXT[] NOT NULL DEFAULT '{}',
+        format VARCHAR(10) NOT NULL DEFAULT 'csv',
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        last_run TIMESTAMP WITH TIME ZONE,
+        next_run TIMESTAMP WITH TIME ZONE,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS scheduled_reports_due_idx ON scheduled_reports (active, next_run);
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

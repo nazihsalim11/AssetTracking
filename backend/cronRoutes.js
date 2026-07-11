@@ -11,7 +11,7 @@ const { isAuthorizedCronRequest } = require('./cronAuth');
  * server — which would run migrations against the real database.
  */
 
-function createCronRouter({ scheduler, notifications, secret, log = console }) {
+function createCronRouter({ scheduler, notifications, reports, secret, log = console }) {
   // One run of a given job at a time. A cold-starting host can be hit by a retry
   // while the first request is still working, and these sweeps are not cheap.
   const inFlight = new Set();
@@ -41,11 +41,17 @@ function createCronRouter({ scheduler, notifications, secret, log = console }) {
     }
   };
 
-  return {
+  const routes = {
     'daily-checks': handler('daily-checks', () => scheduler.runDailyChecks()),
     'sla-checks': handler('sla-checks', () => scheduler.runSlaChecks()),
     'retry-failed': handler('retry-failed', () => notifications.retryFailed())
   };
+  // Only when a reports runner is wired in, so callers that don't use reports keep the
+  // original three-route surface.
+  if (reports && typeof reports.runDueScheduledReports === 'function') {
+    routes['scheduled-reports'] = handler('scheduled-reports', () => reports.runDueScheduledReports());
+  }
+  return routes;
 }
 
 /** Mounts the routes. Must be registered before the /api 404 catch-all. */

@@ -38,6 +38,7 @@ const MODULES = [
   { key: 'reports',              label: 'Reports & Logs',         nav: 'reports',    verbs: ['view', 'export'] },
   { key: 'emails',               label: 'Email Alerts Inbox',     nav: 'emails',     verbs: ['view', 'manage'] },
   { key: 'tickets',              label: 'Support Tickets',        nav: 'tickets',    verbs: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'] },
+  { key: 'sla',                  label: 'SLA Management',         nav: 'sla',        verbs: ['view', 'create', 'edit', 'delete', 'manage'] },
   { key: 'knowledge',            label: 'Knowledge Base',         nav: 'knowledge_base', verbs: ['view', 'create', 'edit', 'delete'] },
   { key: 'userDirectory',        label: 'User Directory',         nav: 'users',      verbs: ['view', 'export'] },
   { key: 'userManagement',       label: 'User Management',        nav: null,         verbs: ['view', 'create', 'edit', 'delete', 'manage'] },
@@ -72,7 +73,7 @@ const DEFAULT_GRANTS = {
   'Admin Team': {
     dashboard: 'all', assets: 'all', allocations: 'all', amc: 'all', finance: 'all',
     documents: 'all', qr: 'all', reports: 'all', emails: 'all', tickets: 'all',
-    knowledge: 'all', userDirectory: 'all',
+    sla: 'all', knowledge: 'all', userDirectory: 'all',
     userManagement: ['view', 'create', 'edit'],           // not manage (permission editing)
     departments: 'all', branches: 'all', categories: 'all', vendors: 'all',
     notificationSettings: 'all', auditLogs: ['view', 'export']
@@ -81,7 +82,7 @@ const DEFAULT_GRANTS = {
   'IT Admin': {
     dashboard: 'all', assets: 'all', allocations: 'all', amc: 'all',
     documents: ['view', 'create', 'edit'], qr: 'all', reports: ['view', 'export'],
-    tickets: 'all', knowledge: ['view', 'create', 'edit'],
+    tickets: 'all', sla: 'all', knowledge: ['view', 'create', 'edit'],
     userDirectory: ['view'], categories: 'all', vendors: 'all'
   },
   'HR Team': {
@@ -94,7 +95,7 @@ const DEFAULT_GRANTS = {
     dashboard: 'all', assets: ['view'], allocations: ['view', 'approve'],
     amc: ['view'], finance: ['view', 'approve'], documents: ['view'],
     reports: ['view', 'export'], tickets: ['view', 'edit', 'approve'],
-    knowledge: ['view'], userDirectory: ['view']
+    sla: ['view'], knowledge: ['view'], userDirectory: ['view']
   },
   'Employee': {
     dashboard: 'all', tickets: ['view', 'create'], knowledge: ['view'],

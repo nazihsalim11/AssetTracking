@@ -20,6 +20,7 @@ import {
   FolderOpen,
   QrCode,
   ClipboardList, BookOpen,
+  ShieldCheck,
   Bell,
   Search,
   AlertCircle,
@@ -57,6 +58,9 @@ import { lockBodyScroll, unlockBodyScroll } from './scrollLock'
 import { api } from './api'
 import BulkImportModal from './BulkImportModal'
 import TicketsPage from './TicketsPage'
+import SlaManagementPage from './SlaManagementPage'
+import DashboardsPanel from './DashboardsPanel'
+import ReportsCenter from './ReportsCenter'
 import './App.css'
 
 const formatINR = (value) => {
@@ -1094,9 +1098,12 @@ function App() {
     const session = mockAuthService.getCurrentSession();
     if (!session) return 'login';
     const hash = window.location.hash.replace('#/', '');
-    const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails', 'tickets', 'knowledge_base'];
+    const validTabs = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents', 'qr_lookup', 'reports', 'emails', 'tickets', 'sla', 'knowledge_base'];
     return hash && validTabs.includes(hash) ? hash : 'dashboard';
   });
+  // Which sub-dashboard is shown on the Dashboard tab: assets (the ledger overview),
+  // tickets, sla, or technicians.
+  const [dashboardView, setDashboardView] = useState('assets');
   const [currentRole, setCurrentRole] = useState(() => {
     const session = mockAuthService.getCurrentSession();
     return session ? session.role : 'Super Admin';
@@ -1504,6 +1511,8 @@ function App() {
   }, [activeTab, assetFilterCategory, assetFilterStatus, assetFilterDept]);
 
   const [reportType, setReportType] = useState('inventory');
+  // Reports tab: the new backend-driven Report Center vs the legacy quick-export tables.
+  const [reportsView, setReportsView] = useState('center');
   const [generatedReport, setGeneratedReport] = useState([]);
 
   // First-Login Password Flow states and handler
@@ -1697,7 +1706,7 @@ function App() {
   const NAV_TO_MODULE = {
     dashboard: 'dashboard', assets: 'assets', allocations: 'allocations', amc: 'amc',
     finance: 'finance', documents: 'documents', qr_lookup: 'qr', reports: 'reports',
-    emails: 'emails', tickets: 'tickets', knowledge_base: 'knowledge', users: 'userDirectory'
+    emails: 'emails', tickets: 'tickets', sla: 'sla', knowledge_base: 'knowledge', users: 'userDirectory'
   };
   const activeModule = NAV_TO_MODULE[activeTab] || null;
   const activePageDenied = activeModule && !can(activeModule, 'view');
@@ -3522,6 +3531,13 @@ function App() {
             </button>
           )}
 
+          {can('sla', 'view') && (
+            <button onClick={() => navigate('sla')} className={`nav-item ${activeTab === 'sla' ? 'active' : ''}`}>
+              <ShieldCheck className="nav-icon" />
+              SLA Management
+            </button>
+          )}
+
           {can('knowledge', 'view') && (
             <button onClick={() => navigate('knowledge_base')} className={`nav-item ${activeTab === 'knowledge_base' ? 'active' : ''}`}>
               <BookOpen className="nav-icon" />
@@ -3724,6 +3740,20 @@ function App() {
           {/* ==================== DASHBOARD PANEL ==================== */}
           {activeTab === 'dashboard' && (
             <>
+              {/* Sub-dashboard selector: assets ledger, plus the live ticket / SLA /
+                  technician dashboards. */}
+              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-sidebar)', padding: '4px', borderRadius: 'var(--radius-lg)', width: 'fit-content', border: '1px solid var(--border-color)', marginBottom: '20px', flexWrap: 'wrap' }}>
+                {[['assets', 'Assets'], ['tickets', 'Tickets'], ['sla', 'SLA'], ['technicians', 'Technicians']].map(([key, label]) => (
+                  <button key={key} onClick={() => setDashboardView(key)}
+                    className={`btn btn-sm ${dashboardView === key ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ border: 'none', background: dashboardView === key ? undefined : 'transparent' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {dashboardView === 'assets' && (
+              <>
               <div className="page-header">
                 <div className="page-title-section">
                   <span className="page-kicker">System Overview</span>
@@ -3872,6 +3902,12 @@ function App() {
                   </div>
                 </div>
               </div>
+              </>
+              )}
+
+              {dashboardView !== 'assets' && (
+                <DashboardsPanel view={dashboardView} addToast={addToast} />
+              )}
             </>
           )}
 
@@ -5527,6 +5563,24 @@ function App() {
                 </div>
               </div>
 
+              {/* Report Center (backend-driven, filterable, exportable) vs the legacy
+                  client-side export tables + audit log. */}
+              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-sidebar)', padding: '4px', borderRadius: 'var(--radius-lg)', width: 'fit-content', border: '1px solid var(--border-color)', marginBottom: '20px', flexWrap: 'wrap' }}>
+                {[['center', 'Report Center'], ['legacy', 'Quick Exports & Audit Log']].map(([key, label]) => (
+                  <button key={key} onClick={() => setReportsView(key)}
+                    className={`btn btn-sm ${reportsView === key ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ border: 'none', background: reportsView === key ? undefined : 'transparent' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {reportsView === 'center' && (
+                <ReportsCenter addToast={addToast} canExport={can('reports', 'export')} />
+              )}
+
+              {reportsView === 'legacy' && (
+              <>
               {/* Report selector */}
               <div className="tabs-container">
                 <button className={`tab-btn ${reportType === 'inventory' ? 'active' : ''}`} onClick={() => setReportType('inventory')}>
@@ -5778,6 +5832,8 @@ function App() {
                   </tbody>
                 </table>
               </div>
+              </>
+              )}
             </>
           )}
 
@@ -5822,6 +5878,14 @@ function App() {
               usersList={usersList}
               addToast={addToast}
               canManageTickets={can('tickets', 'manage')}
+            />
+          )}
+
+          {/* ==================== SLA MANAGEMENT TAB ==================== */}
+          {activeTab === 'sla' && (
+            <SlaManagementPage
+              addToast={addToast}
+              canEdit={can('sla', 'create') || can('sla', 'edit') || can('sla', 'manage')}
             />
           )}
 

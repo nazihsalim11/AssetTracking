@@ -149,6 +149,36 @@ async function resolveRecipients(eventType, ctx) {
     case 'ticket.assigned':
       return uniqueById(await byIds([ctx.assignedTo, ctx.createdBy]));
 
+    case 'ticket.reassigned':
+      // Both agents and the requester: the new owner needs to act, the old owner needs
+      // to know it left them, the requester wants to know who has it now.
+      return uniqueById(await byIds([ctx.assignedTo, ctx.previousAssignee, ctx.createdBy]));
+
+    // Each escalation level names a target; resolve it to real people. Falls back
+    // sensibly so a level can never notify nobody (e.g. a department with no Manager
+    // still reaches its admins).
+    case 'ticket.escalation_level': {
+      switch (ctx.target) {
+        case 'assignee':
+          return uniqueById(await byIds([ctx.assignedTo]));
+        case 'team_lead':
+        case 'department_manager': {
+          const managers = ctx.department
+            ? await activeUsers('role::text = $1 AND department = $2', ['Manager', ctx.department])
+            : await activeUsers('role::text = $1', ['Manager']);
+          if (managers.length) return uniqueById(managers);
+          const deptAdmins = ctx.department ? await departmentAdmins(ctx.department) : [];
+          return uniqueById(deptAdmins.length ? deptAdmins : await admins());
+        }
+        case 'it_admin':
+          return uniqueById(await activeUsers('role::text = $1', ['IT Admin']));
+        case 'super_admin':
+          return uniqueById(await activeUsers('role::text = $1', ['Super Admin']));
+        default:
+          return uniqueById(await admins());
+      }
+    }
+
     case 'ticket.status_changed':
     case 'ticket.priority_changed':
     case 'ticket.reopened':

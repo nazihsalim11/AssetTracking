@@ -20,14 +20,14 @@ test('display labels use the long requested names, keys stay short', () => {
   assert.equal(byKey['Manager'], 'Manager / Approver');
 });
 
-test('all 20 requested modules are present', () => {
+test('all requested modules are present', () => {
   const keys = model.MODULES.map((m) => m.key);
   const required = ['dashboard', 'assets', 'allocations', 'amc', 'finance', 'documents',
-    'qr', 'reports', 'emails', 'tickets', 'knowledge', 'userDirectory', 'userManagement',
+    'qr', 'reports', 'emails', 'tickets', 'sla', 'knowledge', 'userDirectory', 'userManagement',
     'departments', 'branches', 'categories', 'vendors', 'notificationSettings',
     'systemSettings', 'auditLogs'];
   for (const k of required) assert.ok(keys.includes(k), `missing module ${k}`);
-  assert.equal(model.MODULES.length, 20);
+  assert.equal(model.MODULES.length, 21);
 });
 
 test('every module lists only verbs from the canonical set', () => {

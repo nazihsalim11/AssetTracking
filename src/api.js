@@ -98,6 +98,12 @@ const IMPORT_MAX_WAIT_MS = 10 * 60 * 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// "?a=1&b=2" from an object, dropping empty values; "" when nothing is set.
+const qsFrom = (params) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();
+  return qs ? `?${qs}` : '';
+};
+
 // Polls an import job to completion and resolves with its summary. A job that is
 // already finished (because this key was used by an earlier, timed-out attempt)
 // resolves immediately without re-importing anything.
@@ -355,6 +361,37 @@ export const api = {
   bulkDeleteTickets: (ticketIds) => apiFetch('/tickets/bulk/delete', { method: 'POST', body: JSON.stringify({ ticketIds }) }),
   autoAssignTicket: (id) => apiFetch(`/tickets/${id}/auto-assign`, { method: 'POST' }),
   getTicketsAnalytics: () => apiFetch('/tickets-analytics'),
+
+  // SLA Management. Bodies are sent as raw camelCase — the SLA endpoints read camelCase
+  // directly (unlike the older snake-cased endpoints), and responses already arrive
+  // camelCased from the server mappers.
+  getSlaOptions: () => apiFetch('/sla/options'),
+  getSlaPolicies: (includeArchived = false) => apiFetch(`/sla/policies${includeArchived ? '?includeArchived=true' : ''}`),
+  getSlaPolicy: (id) => apiFetch(`/sla/policies/${id}`),
+  createSlaPolicy: (policy) => apiFetch('/sla/policies', { method: 'POST', body: JSON.stringify(policy) }),
+  updateSlaPolicy: (id, policy) => apiFetch(`/sla/policies/${id}`, { method: 'PUT', body: JSON.stringify(policy) }),
+  archiveSlaPolicy: (id, archived = true) => apiFetch(`/sla/policies/${id}/archive`, { method: 'POST', body: JSON.stringify({ archived }) }),
+  deleteSlaPolicy: (id) => apiFetch(`/sla/policies/${id}`, { method: 'DELETE' }),
+  previewSla: (ticket) => apiFetch('/sla/preview', { method: 'POST', body: JSON.stringify(ticket) }),
+  getSlaCalendars: () => apiFetch('/sla/calendars'),
+
+  // Dashboards (live aggregates). Optional filters: { department, from, to }.
+  getTicketDashboard: (params = {}) => apiFetch(`/dashboards/tickets${qsFrom(params)}`),
+  getSlaDashboard: (params = {}) => apiFetch(`/dashboards/sla${qsFrom(params)}`),
+  getTechnicianDashboard: (params = {}) => apiFetch(`/dashboards/technicians${qsFrom(params)}`),
+  getAssetDashboard: () => apiFetch('/dashboards/assets'),
+
+  // Reports (backend engine). Bodies sent raw camelCase.
+  getReportOptions: () => apiFetch('/reports/options'),
+  runReport: (key, filters = {}) => apiFetch('/reports/run', { method: 'POST', body: JSON.stringify({ key, filters }) }),
+  emailReport: (key, filters, recipients) => apiFetch('/reports/email', { method: 'POST', body: JSON.stringify({ key, filters, recipients }) }),
+  getScheduledReports: () => apiFetch('/reports/scheduled'),
+  createScheduledReport: (payload) => apiFetch('/reports/scheduled', { method: 'POST', body: JSON.stringify(payload) }),
+  updateScheduledReport: (id, payload) => apiFetch(`/reports/scheduled/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteScheduledReport: (id) => apiFetch(`/reports/scheduled/${id}`, { method: 'DELETE' }),
+  createSlaCalendar: (calendar) => apiFetch('/sla/calendars', { method: 'POST', body: JSON.stringify(calendar) }),
+  updateSlaCalendar: (id, calendar) => apiFetch(`/sla/calendars/${id}`, { method: 'PUT', body: JSON.stringify(calendar) }),
+  deleteSlaCalendar: (id) => apiFetch(`/sla/calendars/${id}`, { method: 'DELETE' }),
 
   // Helpdesk + Knowledge Base
   getHelpdeskOptions: () => apiFetch('/helpdesk/options'),

@@ -13,6 +13,14 @@
 
 const db = require('./../db');
 const { notify, getSettings } = require('./index');
+const slaEngine = require('../slaEngine');
+const slaModel = require('../slaModel');
+
+// Display names for escalation targets, mirrored in the frontend.
+const TARGET_LABELS = {
+  assignee: 'Assigned Technician', team_lead: 'Team Lead',
+  department_manager: 'Department Manager', it_admin: 'IT Administrator', super_admin: 'Super Admin'
+};
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -120,7 +128,7 @@ async function checkSlaApproaching() {
 async function checkSlaBreaches() {
   const { rows } = await db.query(
     `SELECT id, ticket_id, subject, department, priority, assigned_to, assigned_to_name,
-            created_by, sla_deadline, escalated
+            created_by, sla_deadline, escalated, sla_policy_id
      FROM tickets
      WHERE status <> ALL($1::text[])
        AND sla_deadline < NOW()`,
@@ -146,6 +154,10 @@ async function checkSlaBreaches() {
     // The people working the ticket.
     await notify('ticket.sla_breached', `sla-breached:${t.id}`, ctx);
 
+    // Policy-governed tickets escalate through their configured ladder
+    // (checkSlaEscalations); only unpoliced tickets fall back to this single-level
+    // "escalate to admins on breach" behaviour.
+    if (t.sla_policy_id) continue;
     if (t.escalated) continue;
 
     const client = await db.pool.connect();
@@ -184,6 +196,100 @@ async function checkSlaBreaches() {
   return { breached: rows.length, escalated: escalatedCount };
 }
 
+/**
+ * Multi-level escalation ladder execution for policy-governed tickets. For each open
+ * ticket, the SLA engine decides which of its policy's escalation levels are now due
+ * (based on elapsed business-hours percentage, remaining time, or a breach). The
+ * ticket's escalation_level is advanced to the highest due level, and every newly
+ * crossed level notifies its configured target. Idempotent: a level's stable event key
+ * plus the escalation_level guard mean a level is never actioned twice.
+ */
+async function checkSlaEscalations() {
+  const { rows: tickets } = await db.query(
+    `SELECT id, ticket_id, subject, department, priority, assigned_to, assigned_to_name,
+            created_by, created_at, first_response_due, resolution_due, first_response_at,
+            escalation_level, sla_policy_id
+     FROM tickets
+     WHERE status <> ALL($1::text[]) AND sla_policy_id IS NOT NULL`,
+    [OPEN_STATUSES]
+  );
+  if (!tickets.length) return { escalated: 0 };
+
+  const policyIds = [...new Set(tickets.map((t) => t.sla_policy_id))];
+
+  // Escalation levels grouped by policy, in one query.
+  const { rows: levelRows } = await db.query(
+    `SELECT policy_id, level, trigger_type, threshold, notify_target
+     FROM sla_escalation_levels WHERE policy_id = ANY($1::int[]) ORDER BY level`,
+    [policyIds]
+  );
+  const levelsByPolicy = {};
+  for (const l of levelRows) (levelsByPolicy[l.policy_id] ||= []).push(l);
+
+  // Calendar per policy (loaded once each), so the engine can measure business hours.
+  const { rows: polRows } = await db.query(
+    `SELECT id, calendar_id FROM sla_policies WHERE id = ANY($1::int[])`,
+    [policyIds]
+  );
+  const calByPolicy = {};
+  for (const p of polRows) calByPolicy[p.id] = await slaModel.getCalendarWithHolidays(p.calendar_id);
+
+  let escalatedCount = 0;
+
+  for (const t of tickets) {
+    const levels = levelsByPolicy[t.sla_policy_id];
+    if (!levels || !levels.length) continue;
+
+    const due = slaEngine.dueEscalations(levels, {
+      now: new Date(),
+      createdAt: t.created_at,
+      firstResponseDue: t.first_response_due,
+      resolutionDue: t.resolution_due,
+      firstResponseAt: t.first_response_at,
+      calendar: calByPolicy[t.sla_policy_id]
+    });
+    if (!due.length) continue;
+
+    const maxDueLevel = due[due.length - 1].level;
+    if (maxDueLevel <= t.escalation_level) continue;
+
+    // Claim the advance atomically so two overlapping runs cannot both escalate.
+    const claimed = await db.query(
+      `UPDATE tickets
+       SET escalation_level = $1, escalated = TRUE, escalated_at = COALESCE(escalated_at, NOW()), updated_at = NOW()
+       WHERE id = $2 AND escalation_level < $1
+       RETURNING id`,
+      [maxDueLevel, t.id]
+    );
+    if (!claimed.rowCount) continue;
+
+    for (const lvl of due) {
+      if (lvl.level <= t.escalation_level) continue; // only newly crossed levels
+      const targetLabel = TARGET_LABELS[lvl.notify_target] || lvl.notify_target;
+      await db.query(
+        `INSERT INTO ticket_timeline (ticket_id, actor_name, action, detail) VALUES ($1, 'System', 'Escalated', $2)`,
+        [t.id, `Escalation level ${lvl.level}: notified ${targetLabel}`]
+      );
+      await notify('ticket.escalation_level', `escalation:${t.id}:${lvl.level}`, {
+        ticketId: t.ticket_id,
+        subject: t.subject,
+        department: t.department,
+        priority: t.priority,
+        assignedTo: t.assigned_to,
+        assignedToName: t.assigned_to_name,
+        createdBy: t.created_by,
+        resolutionDue: t.resolution_due,
+        level: lvl.level,
+        target: lvl.notify_target,
+        targetLabel
+      });
+    }
+    escalatedCount++;
+  }
+
+  return { escalated: escalatedCount };
+}
+
 /* ------------------------------------------------------------- entry points */
 
 async function runDailyChecks() {
@@ -201,8 +307,9 @@ async function runSlaChecks() {
   try {
     const approaching = await checkSlaApproaching();
     const { breached, escalated } = await checkSlaBreaches();
-    if (approaching || breached || escalated) {
-      console.log(`[notifications] SLA: ${approaching} approaching, ${breached} breached, ${escalated} newly escalated`);
+    const { escalated: laddered } = await checkSlaEscalations();
+    if (approaching || breached || escalated || laddered) {
+      console.log(`[notifications] SLA: ${approaching} approaching, ${breached} breached, ${escalated + laddered} newly escalated`);
     }
   } catch (err) {
     console.error('[notifications] SLA checks failed:', err);
@@ -215,5 +322,6 @@ module.exports = {
   checkWarrantyExpiries,
   checkAmcExpiries,
   checkSlaApproaching,
-  checkSlaBreaches
+  checkSlaBreaches,
+  checkSlaEscalations
 };
