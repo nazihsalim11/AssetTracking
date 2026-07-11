@@ -3,11 +3,13 @@ import { motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import {
-  FileText, Download, Printer, Mail, Play, CalendarClock, Plus, Trash2, Filter, X
+  FileText, Download, Printer, Mail, Play, CalendarClock, Trash2, Filter, X,
+  BarChart3, ChevronDown
 } from 'lucide-react';
 import { api } from './api';
 import Modal from './Modal';
 import CustomSelect from './CustomSelect';
+import { SkeletonCards } from './Skeleton';
 import { silk } from './engine/motion';
 
 /* --------------------------------------------------------------- formatting */
@@ -87,10 +89,14 @@ const exportPdf = (report) => {
 
 /* --------------------------------------------------------------- filter bar */
 
+// Which filter keys a report actually exposes — drives both the grid below and
+// the "N active" count in the section header.
+const reportFilterKeys = (report) => (report?.filters || []);
+
 const FilterBar = ({ report, filters, setFilters, options }) => {
   if (!report) return null;
   const set = (patch) => setFilters((f) => ({ ...f, ...patch }));
-  const has = (k) => (report.filters || []).includes(k);
+  const has = (k) => reportFilterKeys(report).includes(k);
 
   // The status filter's options depend on the report.
   const statusOptions = report.key === 'purchase_orders' ? options.poStatuses
@@ -98,18 +104,17 @@ const FilterBar = ({ report, filters, setFilters, options }) => {
       : options.ticketStatuses;
 
   const Select = ({ k, label, opts }) => (
-    <div className="form-group" style={{ margin: 0, minWidth: '160px' }}>
+    <div className="form-group" style={{ margin: 0 }}>
       <label className="form-label" style={{ fontSize: '11px' }}>{label}</label>
       <CustomSelect value={filters[k] || ''} onChange={(e) => set({ [k]: e.target.value })} searchable
         options={[{ value: '', label: `All` }, ...(opts || []).map((o) => ({ value: o, label: o }))]} />
     </div>
   );
 
+  // A responsive grid: columns pack in as space allows and collapse to one on
+  // narrow screens, so filters never stack awkwardly down one side.
   return (
-    <div className="card" style={{ padding: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 700 }}>
-        <Filter size={13} /> Filters
-      </span>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '12px', alignItems: 'end' }}>
       {has('department') && <Select k="department" label="Department" opts={options.departments} />}
       {has('category') && <Select k="category" label="Category" opts={options.categories} />}
       {has('branch') && <Select k="branch" label="Branch / Location" opts={options.branches} />}
@@ -117,7 +122,7 @@ const FilterBar = ({ report, filters, setFilters, options }) => {
       {has('status') && <Select k="status" label="Status" opts={statusOptions} />}
       {has('priority') && <Select k="priority" label="Priority" opts={options.priorities} />}
       {has('employee') && (
-        <div className="form-group" style={{ margin: 0, minWidth: '160px' }}>
+        <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label" style={{ fontSize: '11px' }}>Employee</label>
           <input className="form-input" value={filters.employee || ''} onChange={(e) => set({ employee: e.target.value })} placeholder="Name contains…" />
         </div>
@@ -133,9 +138,6 @@ const FilterBar = ({ report, filters, setFilters, options }) => {
           <label className="form-label" style={{ fontSize: '11px' }}>To</label>
           <input className="form-input" type="date" value={filters.dateTo || ''} onChange={(e) => set({ dateTo: e.target.value })} />
         </div>
-      )}
-      {Object.keys(filters).some((k) => filters[k]) && (
-        <button className="btn btn-secondary btn-sm" onClick={() => setFilters({})}><X size={13} /> Clear</button>
       )}
     </div>
   );
@@ -195,6 +197,7 @@ const ReportsCenter = ({ addToast, canExport = false }) => {
   const [running, setRunning] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [scheduling, setScheduling] = useState(null); // {} to open for current report, or an existing row
+  const [filtersOpen, setFiltersOpen] = useState(true); // filters collapse into an expandable section
 
   const load = useCallback(async () => {
     try {
@@ -257,26 +260,59 @@ const ReportsCenter = ({ addToast, canExport = false }) => {
   if (!options) return <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading report center…</div>;
 
   const grouped = options.reports.reduce((acc, r) => { (acc[r.group] ||= []).push(r); return acc; }, {});
+  const hasFilters = reportFilterKeys(selectedReport).length > 0;
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   return (
     <motion.div {...silk} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* report picker */}
-      <div className="card" style={{ padding: '16px', display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div className="form-group" style={{ margin: 0, minWidth: '280px', flex: 1 }}>
-          <label className="form-label" style={{ fontSize: '11px' }}><FileText size={12} style={{ verticalAlign: '-1px' }} /> Report</label>
-          <CustomSelect value={reportKey} onChange={(e) => setReportKey(e.target.value)} searchable
-            options={Object.entries(grouped).flatMap(([group, list]) => list.map((r) => ({ value: r.key, label: `${group} — ${r.label}` })))} />
+      {/* Unified control toolbar: report selection, Run, and the report's own
+          filters all live together so the flow reads select → filter → run. */}
+      <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ margin: 0, minWidth: '260px', flex: 1 }}>
+            <label className="form-label" style={{ fontSize: '11px' }}><FileText size={12} style={{ verticalAlign: '-1px' }} /> Report</label>
+            <CustomSelect value={reportKey} onChange={(e) => setReportKey(e.target.value)} searchable
+              options={Object.entries(grouped).flatMap(([group, list]) => list.map((r) => ({ value: r.key, label: `${group} — ${r.label}` })))} />
+          </div>
+          <button className="btn btn-primary" onClick={run} disabled={running || !reportKey}><Play size={15} /> {running ? 'Running…' : 'Run Report'}</button>
         </div>
-        <button className="btn btn-primary" onClick={run} disabled={running}><Play size={15} /> {running ? 'Running…' : 'Run Report'}</button>
+
+        {hasFilters && (
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+            {/* Filters header doubles as the collapse toggle for narrow screens. */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: filtersOpen ? '14px' : 0 }}>
+              <button type="button" onClick={() => setFiltersOpen((o) => !o)}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text-primary)', font: 'inherit' }}
+                aria-expanded={filtersOpen}>
+                <Filter size={13} style={{ color: 'var(--text-muted)' }} />
+                <span style={{ fontSize: '12px', fontWeight: 700 }}>Filters</span>
+                {activeFilterCount > 0 && <span className="badge badge-assigned">{activeFilterCount} active</span>}
+                <ChevronDown size={14} style={{ color: 'var(--text-muted)', transform: filtersOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }} />
+              </button>
+              {activeFilterCount > 0 && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setFilters({})}><X size={13} /> Clear</button>
+              )}
+            </div>
+            {filtersOpen && <FilterBar report={selectedReport} filters={filters} setFilters={setFilters} options={options} />}
+          </div>
+        )}
       </div>
 
-      <FilterBar report={selectedReport} filters={filters} setFilters={setFilters} options={options} />
-
-      {report && (
-        <>
-          {/* actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+      {/* Report content area: loading skeleton → results → "nothing yet" placeholder. */}
+      {running ? (
+        <div className="card" role="status" aria-busy="true" aria-label="Generating report" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <SkeletonCards count={4} />
+          <div>
+            <span className="skeleton skeleton-title" style={{ display: 'block' }} />
+            {Array.from({ length: 6 }, (_, i) => <span key={i} className="skeleton skeleton-row" style={{ display: 'block' }} />)}
+          </div>
+        </div>
+      ) : report ? (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Results header: summary on the left, export actions grouped alongside. */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '14px 16px', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+              <span className="card-title" style={{ margin: 0 }}>{selectedReport?.label || 'Report'}</span>
               {Object.entries(report.summary || {}).map(([k, v]) => <span key={k}>{k}: <strong style={{ color: 'var(--text-primary)' }}>{v}</strong></span>)}
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -290,7 +326,7 @@ const ReportsCenter = ({ addToast, canExport = false }) => {
           </div>
 
           {/* table */}
-          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }}>
             <table className="data-table" style={{ width: '100%' }}>
               <thead><tr>{report.columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
               <tbody>
@@ -301,7 +337,18 @@ const ReportsCenter = ({ addToast, canExport = false }) => {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="empty-state" style={{ minHeight: '300px' }}>
+            <div className="empty-state-icon"><BarChart3 size={22} /></div>
+            <div className="empty-state-title">No report generated yet</div>
+            <div className="empty-state-desc">
+              Select a report{hasFilters ? ' and configure the filters above' : ''}, then click <strong>Run Report</strong> to generate results. Export, print, email and schedule actions appear here once a report is ready.
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={run} disabled={!reportKey} style={{ marginTop: '4px' }}><Play size={14} /> Run Report</button>
+          </div>
+        </div>
       )}
 
       {/* scheduled reports */}
