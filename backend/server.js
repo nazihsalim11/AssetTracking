@@ -24,6 +24,9 @@ const createAuth = require('./src/middleware/auth');
 const assetsRoutes = require('./src/routes/assets');
 const amcRoutes = require('./src/routes/amc');
 const invoicesRoutes = require('./src/routes/invoices');
+const movementsRoutes = require('./src/routes/movements');
+const documentsRoutes = require('./src/routes/documents');
+const logsRoutes = require('./src/routes/logs');
 const createActorOf = require('./src/utils/actor');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -157,122 +160,12 @@ amcRoutes.register(app, { requirePermission });
 // helpers); registered in place to preserve route-registration order.
 invoicesRoutes.register(app, { requirePermission, actorOf });
 
-// --- MOVEMENTS API ---
-// Movement history names assets and custodians, so it is scoped the same way the
-// directory is: an employee sees only the history of assets they currently hold.
-app.get('/api/movements', async (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  try {
-    const result = isEmployee(user)
-      ? await db.query(
-          `SELECT * FROM movements WHERE asset_id IN (${EMPLOYEE_ASSET_IDS})
-           ORDER BY date DESC, created_at DESC`,
-          [user.id]
-        )
-      : await db.query('SELECT * FROM movements ORDER BY date DESC, created_at DESC');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('GET /api/movements failed:', err);
-    res.status(500).json({ error: 'Database query failed: ' + err.message });
-  }
-});
-
-app.post('/api/movements', async (req, res) => {
-  const actingUser = await requirePermission(req, res, 'allocations', 'create');
-  if (!actingUser) return;
-
-  const { assetId, date, type, from, to, actor, notes } = req.body;
-  const query = `
-    INSERT INTO movements (asset_id, date, type, from_loc, to_loc, actor, notes)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING *;
-  `;
-  const values = [assetId, date || new Date(), type, from || '', to || '', actor, notes || ''];
-
-  try {
-    const result = await db.query(query, values);
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database insertion failed: ' + err.message });
-  }
-});
-
-
-// --- DOCUMENTS API ---
-// Access is enforced server-side against the role_permissions matrix, so a role
-// without viewDocuments cannot read the repository even by calling the API directly.
-app.get('/api/documents', async (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  try {
-    if (!(await roleAllows(user.role, 'documents', 'view'))) {
-      return res.status(403).json({ error: 'Your role is not permitted to view the Document Repository.' });
-    }
-    const result = await db.query('SELECT * FROM documents ORDER BY created_at DESC');
-    res.json(result.rows);
-  } catch (err) {
-    console.error('GET /api/documents failed:', err);
-    res.status(500).json({ error: 'Database query failed: ' + err.message });
-  }
-});
-
-app.post('/api/documents', async (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  try {
-    if (!(await roleAllows(user.role, 'documents', 'create'))) {
-      return res.status(403).json({ error: 'Your role is not permitted to add documents.' });
-    }
-    const { name, type, size, uploadDate, association, fileUrl } = req.body;
-    // The database issues the id from a sequence; any client-supplied id is ignored.
-    const idRow = await db.query(`SELECT 'DOC-' || LPAD(nextval('documents_doc_seq')::text, 3, '0') AS id`);
-    const id = idRow.rows[0].id;
-
-    const result = await db.query(
-      `INSERT INTO documents (id, name, type, file_size, upload_date, association, file_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [id, name, type, size || '', uploadDate, association || '', fileUrl || '']
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error('POST /api/documents failed:', err);
-    res.status(500).json({ error: 'Database insertion failed: ' + err.message });
-  }
-});
-
-
-// --- LOGS API ---
-app.get('/api/logs', async (req, res) => {
-  try {
-    const result = await db.query('SELECT * FROM system_logs ORDER BY created_at DESC');
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database query failed' });
-  }
-});
-
-app.post('/api/logs', async (req, res) => {
-  // A client-supplied timestamp is ignored: created_at is set by the database, so
-  // a caller with a wrong clock cannot back-date a log entry.
-  const { actor, action, detail } = req.body;
-  const query = `
-    INSERT INTO system_logs (actor, action, detail)
-    VALUES ($1, $2, $3)
-    RETURNING *;
-  `;
-  const values = [actor, action, detail || ''];
-
-  try {
-    const result = await db.query(query, values);
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database insertion failed: ' + err.message });
-  }
-});
+// --- MOVEMENTS / DOCUMENTS / LOGS APIs ---
+// Extracted verbatim to src/routes/{movements,documents,logs}.js; registered in
+// place to preserve route-registration order.
+movementsRoutes.register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_ASSET_IDS });
+documentsRoutes.register(app, { requireUser, roleAllows });
+logsRoutes.register(app);
 
 
 // --- NOTIFICATIONS API ---
