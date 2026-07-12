@@ -218,7 +218,11 @@ function register(app, { requireUser, requirePermission, authenticateRequest }) 
       smsEnabled: 'sms_enabled',
       warrantyReminderDays: 'warranty_reminder_days',
       amcReminderDays: 'amc_reminder_days',
-      slaWarningHours: 'sla_warning_hours'
+      slaWarningHours: 'sla_warning_hours',
+      serviceDueReminderDays: 'service_due_reminder_days',
+      paymentDueReminderDays: 'payment_due_reminder_days',
+      returnDueReminderDays: 'return_due_reminder_days',
+      invoicePendingGraceDays: 'invoice_pending_grace_days'
     };
 
     const setClauses = [];

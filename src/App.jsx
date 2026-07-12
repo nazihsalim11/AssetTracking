@@ -28,6 +28,7 @@ import {
 import { mockAuthService } from './auth'
 import LoginView from './LoginView'
 import CustomSelect from './CustomSelect'
+import FormSelect from './FormSelect'
 import RelativeTime from './RelativeTime'
 import { can as canPerm, canLegacy, roleLabel } from './permissions'
 import AsyncBoundary from './AsyncBoundary'
@@ -120,7 +121,16 @@ function App() {
   // The permission vocabulary (modules, verbs, role labels) shipped by the API.
   const [permModel, setPermModel] = useState({ modules: [], roles: [], verbLabels: {} });
   const [assignments, setAssignments] = useState([]);
-  const [departments, setDepartments] = useState(['IT', 'HR', 'Finance', 'Operations', 'Administration']);
+  // Department & Location masters, loaded from the server. No hardcoded fallback: a failed
+  // load surfaces through loadError + Retry (see the initial-load effect) rather than being
+  // masked by placeholder values. Held as arrays of active names for the option lists.
+  const [departments, setDepartments] = useState([]);
+  const [locations, setLocations] = useState([]);
+  // Vendor registry, for the searchable vendor dropdowns in Finance and AMC. Scoped by
+  // permission server-side, so a role that cannot view vendors legitimately gets [].
+  const [vendors, setVendors] = useState([]);
+  const [newAmcVendorId, setNewAmcVendorId] = useState('');
+  const [newInvoiceVendorId, setNewInvoiceVendorId] = useState('');
 
   const [quickAllocAssetId, setQuickAllocAssetId] = useState('');
   const [quickTransferAssetId, setQuickTransferAssetId] = useState('');
@@ -218,7 +228,7 @@ function App() {
           // getDocuments 403s for roles without viewDocuments (enforced server-side),
           // so it is made resilient here — an unauthorised repository yields [] rather
           // than failing the whole batch.
-          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments, dbRolePerms, dbDepartments, dbAssetSubtypes] = await Promise.all([
+          const [dbAssets, dbAmcs, dbInvoices, dbDocuments, dbMovements, dbLogs, dbNotifications, dbEmails, dbUsers, dbAssignments, dbRolePerms, dbDepartments, dbLocations, dbAssetSubtypes, dbVendors] = await Promise.all([
             api.getAssets(),
             api.getAmcs(),
             api.getInvoices(),
@@ -230,8 +240,10 @@ function App() {
             api.getUsers(),
             api.getAssignments(),
             api.getRolePermissions(),
-            api.getDepartments().catch(() => null),
-            api.getAssetSubtypes().catch(() => ({}))
+            api.getDepartments(),
+            api.getLocations(),
+            api.getAssetSubtypes().catch(() => ({})),
+            api.getVendors().catch(() => [])
           ]);
           if (cancelled) return;
           if (dbRolePerms && typeof dbRolePerms === 'object') {
@@ -247,8 +259,11 @@ function App() {
               });
             }
           }
-          if (Array.isArray(dbDepartments) && dbDepartments.length) setDepartments(dbDepartments);
+          // Masters arrive as [{ id, name, isActive }]; the option lists want active names.
+          setDepartments((dbDepartments || []).filter(d => d.isActive !== false).map(d => d.name));
+          setLocations((dbLocations || []).filter(l => l.isActive !== false).map(l => l.name));
           if (dbAssetSubtypes && typeof dbAssetSubtypes === 'object') setAssetSubtypes(dbAssetSubtypes);
+          setVendors(Array.isArray(dbVendors) ? dbVendors : []);
 
           // Promise.all above rejects if any fetch fails, so reaching this point
           // means every response is authoritative — including an empty one. Always
@@ -302,6 +317,18 @@ function App() {
   // exist. Prefer this over locally filtering assignments after a delete: the local
   // filters matched on employee *name*, which silently missed renamed or duplicate
   // custodians and left orphans behind in state (and in localStorage).
+  // Re-reads the Department & Location masters after an admin edits them, so every picker
+  // in the app reflects the change without a full reload.
+  const refreshMasters = React.useCallback(async () => {
+    try {
+      const [depts, locs] = await Promise.all([api.getDepartments(), api.getLocations()]);
+      setDepartments((depts || []).filter(d => d.isActive !== false).map(d => d.name));
+      setLocations((locs || []).filter(l => l.isActive !== false).map(l => l.name));
+    } catch (err) {
+      console.warn('[AssetFlow] Could not refresh masters:', err);
+    }
+  }, []);
+
   const refreshAssignments = React.useCallback(async () => {
     if (!isApiConnected) return null;
     try {
@@ -501,9 +528,9 @@ function App() {
   const [selectedAssetIds, setSelectedAssetIds] = useState([]);
   const [bulkAssetCategoryValue, setBulkAssetCategoryValue] = useState('IT');
   const [showBulkAssetCategory, setShowBulkAssetCategory] = useState(false);
-  const [bulkAssetLocationValue, setBulkAssetLocationValue] = useState('New York HQ');
+  const [bulkAssetLocationValue, setBulkAssetLocationValue] = useState('');
   const [showBulkAssetLocation, setShowBulkAssetLocation] = useState(false);
-  const [bulkAssetDeptValue, setBulkAssetDeptValue] = useState('IT');
+  const [bulkAssetDeptValue, setBulkAssetDeptValue] = useState('');
   const [showBulkAssetDept, setShowBulkAssetDept] = useState(false);
 
   useEffect(() => {
@@ -924,6 +951,7 @@ function App() {
     const dept = data.get('department');
     const date = data.get('date') || new Date().toISOString().split('T')[0];
     const notes = data.get('notes');
+    const expectedReturnDate = data.get('expectedReturnDate') || null;
 
     if (!hasPermission('allocate', allocateModal.category)) {
       addToast("Access Denied", `Your role (${currentRole}) is not permitted to allocate ${allocateModal.category} assets.`, "error");
@@ -953,7 +981,8 @@ function App() {
           quantity: qty,
           department: dept,
           notes,
-          date
+          date,
+          expectedReturnDate
         });
         const [updatedAssets, updatedAssignments] = await Promise.all([
           api.getAssets(),
@@ -1664,10 +1693,20 @@ function App() {
       return;
     }
 
+    // Vendor comes from the registry now. Resolve the selected id to its display name so
+    // the local record shows the vendor immediately; the server re-derives it authoritatively.
+    const amcVendorId = data.get('vendorId') || newAmcVendorId || '';
+    const amcVendor = vendors.find(v => String(v.id) === String(amcVendorId));
+    if (!amcVendorId || !amcVendor) {
+      addToast("Vendor Required", "Select a vendor from the registry.", "error");
+      return;
+    }
+
     const newAmc = {
       id: `AMC-${String(amcs.length + 101).padStart(3, '0')}`,
       poNumber,
-      vendor: data.get('vendor'),
+      vendorId: Number(amcVendorId),
+      vendor: amcVendor.name,
       cost,
       startDate: data.get('startDate'),
       endDate: data.get('endDate'),
@@ -1691,6 +1730,7 @@ function App() {
     addToast("AMC Registered", `Contract ${newAmc.id} created successfully.`, "success");
     e.target.reset();
     setNewAmcServiceSchedule('Monthly');
+    setNewAmcVendorId('');
   });
 
   // Link Asset to AMC
@@ -1776,10 +1816,19 @@ function App() {
     }, 100);
     const newInvId = `INV-${maxInvIdNum + 1}`;
 
+    // Vendor from the registry; resolve to display name for the optimistic local record.
+    const invVendorId = data.get('vendorId') || newInvoiceVendorId || '';
+    const invVendor = vendors.find(v => String(v.id) === String(invVendorId));
+    if (!invVendorId || !invVendor) {
+      addToast("Vendor Required", "Select a vendor from the registry.", "error");
+      return;
+    }
+
     const newInv = {
       id: newInvId,
       poReference: data.get('poReference'),
-      vendor: data.get('vendor'),
+      vendorId: Number(invVendorId),
+      vendor: invVendor.name,
       amount,
       gst,
       date: data.get('date') || new Date().toISOString().split('T')[0],
@@ -1839,6 +1888,7 @@ function App() {
     await addAuditLog("Invoice Registration", `Registered invoice ${newInv.id} from ${newInv.vendor}`);
     addToast("Invoice Registered", `Invoice ${newInv.id} registered successfully.`, "success");
     e.target.reset();
+    setNewInvoiceVendorId('');
   });
 
   // Upload Document
@@ -2445,6 +2495,14 @@ function App() {
     bulkAssetDeptValue,
     bulkAssetLocationValue,
     departments,
+    setDepartments,
+    locations,
+    setLocations,
+    vendors,
+    newAmcVendorId,
+    setNewAmcVendorId,
+    newInvoiceVendorId,
+    setNewInvoiceVendorId,
     filteredAssets,
     handleBulkAssetCategoryChange,
     handleBulkAssetDeptChange,
@@ -2940,6 +2998,7 @@ function App() {
               onUsersDeleted={handleUsersDeleted}
               currentRole={currentRole}
               departments={departments}
+              onMastersChanged={refreshMasters}
             />
           )}
 
@@ -2952,6 +3011,7 @@ function App() {
               usersList={usersList}
               addToast={addToast}
               canManageTickets={can('tickets', 'manage')}
+              departments={departments}
             />
           )}
 
@@ -3079,15 +3139,22 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Initial Location Branch</label>
-                    <input type="text" name="location" placeholder="e.g. London HQ" className="form-input" required />
+                    <FormSelect name="location" options={locations} required
+                      emptyHint="No locations yet — add them in Settings → Locations." />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Associated Office Dept</label>
-                    <input type="text" name="department" placeholder="e.g. Engineering" className="form-input" required />
+                    <FormSelect name="department" options={departments} required
+                      emptyHint="No departments yet — add them in Settings → Departments." />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Associate Department</label>
-                    <input type="text" name="associateDepartment" placeholder="e.g. Facilities (optional)" className="form-input" />
+                    <FormSelect name="associateDepartment" options={departments}
+                      placeholder="Optional" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Reorder Level (Low-Stock Alert)</label>
+                    <input type="number" name="reorderLevel" min={0} placeholder="0 = not tracked" className="form-input" />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Useful Lifespan (Depreciation Years)</label>
@@ -3191,15 +3258,21 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Location Branch</label>
-                    <input type="text" name="location" defaultValue={editAssetModal.location} className="form-input" required />
+                    <FormSelect name="location" options={locations} defaultValue={editAssetModal.location || ''} required
+                      emptyHint="No locations yet — add them in Settings → Locations." />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Associated Office Dept</label>
-                    <input type="text" name="department" defaultValue={editAssetModal.department} className="form-input" required />
+                    <FormSelect name="department" options={departments} defaultValue={editAssetModal.department || ''} required
+                      emptyHint="No departments yet — add them in Settings → Departments." />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Associate Department</label>
-                    <input type="text" name="associateDepartment" defaultValue={editAssetModal.associateDepartment || ''} placeholder="Optional" className="form-input" />
+                    <FormSelect name="associateDepartment" options={departments} defaultValue={editAssetModal.associateDepartment || ''} placeholder="Optional" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Reorder Level (Low-Stock Alert)</label>
+                    <input type="number" name="reorderLevel" min={0} defaultValue={editAssetModal.reorderLevel ?? 0} placeholder="0 = not tracked" className="form-input" />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Useful Lifespan (Depreciation Years)</label>
@@ -3280,15 +3353,15 @@ function App() {
                 </div>
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Allocation Department</label>
-                  <input
-                    type="text"
+                  <FormSelect
                     name="department"
+                    options={departments}
                     value={allocateDepartment}
                     onChange={(e) => setAllocateDepartment(e.target.value)}
-                    placeholder={allocateEmployee ? 'No department on record — enter one' : 'Select an employee to auto-fill'}
-                    className="form-input"
+                    placeholder={allocateEmployee ? 'Select a department' : 'Select an employee to auto-fill'}
                     required
                     disabled={allocateModal.availableQuantity === 0}
+                    emptyHint="No departments yet — add them in Settings → Departments."
                   />
                   {allocateEmployee && findEmployeeByName(allocateEmployee)?.department && (
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -3303,6 +3376,11 @@ function App() {
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Assignment Date</label>
                   <input type="date" name="date" defaultValue={new Date().toISOString().split('T')[0]} className="form-input" required disabled={allocateModal.availableQuantity === 0} />
+                </div>
+                <div className="form-group" style={{ marginTop: '12px' }}>
+                  <label className="form-label">Expected Return Date</label>
+                  <input type="date" name="expectedReturnDate" className="form-input" disabled={allocateModal.availableQuantity === 0} />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Optional — drives return-due reminders.</span>
                 </div>
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Allocation Notes / SLA terms</label>
@@ -3400,13 +3478,13 @@ function App() {
 
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Target Department</label>
-                  <input
-                    type="text"
+                  <FormSelect
                     name="department"
+                    options={departments}
                     value={transferDepartment}
                     onChange={(e) => setTransferDepartment(e.target.value)}
-                    className="form-input"
                     required
+                    emptyHint="No departments yet — add them in Settings → Departments."
                   />
                   {transferTargetType === 'employee' && findEmployeeByName(transferEmployee)?.department && (
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -3422,7 +3500,8 @@ function App() {
 
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Target Branch / Location</label>
-                  <input type="text" name="location" defaultValue={transferModal.location} className="form-input" required />
+                  <FormSelect name="location" options={locations} defaultValue={transferModal.location || ''} required
+                    emptyHint="No locations yet — add them in Settings → Locations." />
                 </div>
 
                 <div className="form-group" style={{ marginTop: '12px' }}>
@@ -3460,7 +3539,8 @@ function App() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Return Location / Warehouse</label>
-                  <input type="text" name="location" defaultValue={returnModal.location} className="form-input" required />
+                  <FormSelect name="location" options={locations} defaultValue={returnModal.location || ''} required
+                    emptyHint="No locations yet — add them in Settings → Locations." />
                 </div>
                 <div className="form-group" style={{ marginTop: '12px' }}>
                   <label className="form-label">Return Log Date</label>
@@ -3591,7 +3671,8 @@ function App() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Department</label>
-                  <input type="text" name="department" defaultValue={editAssignmentModal.department} className="form-input" required />
+                  <FormSelect name="department" options={departments} defaultValue={editAssignmentModal.department || ''} required
+                    emptyHint="No departments yet — add them in Settings → Departments." />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Assigned Quantity (Max Available: {editAssignmentModal.quantity + (assets.find(a => a.id === editAssignmentModal.assetId)?.availableQuantity || 0)})</label>
@@ -3640,7 +3721,8 @@ function App() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Return Location Branch</label>
-                  <input type="text" name="location" defaultValue="Inventory" className="form-input" required />
+                  <FormSelect name="location" options={locations} defaultValue="Inventory" required
+                    emptyHint="No locations yet — add them in Settings → Locations." />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Return Notes / Condition</label>

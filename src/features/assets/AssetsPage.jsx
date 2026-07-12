@@ -5,7 +5,7 @@ import { formatINR } from '../../utils/format'
 import { useAppData } from '../../context/AppDataContext'
 
 export default function AssetsPage() {
-  const { assetFilterCategory, assetFilterDept, assetFilterStatus, assets, bulkAssetCategoryValue, bulkAssetDeptValue, bulkAssetLocationValue, departments, filteredAssets, handleBulkAssetCategoryChange, handleBulkAssetDeptChange, handleBulkAssetLocationChange, handleBulkAssetStatusChange, handleBulkDeleteAssets, handleDeleteAsset, handleDisposeAsset, hasPermission, selectedAssetIds, setAddAssetModal, setAllocateModal, setAssetDetailModal, setAssetFilterCategory, setAssetFilterDept, setAssetFilterStatus, setBulkAssetCategoryValue, setBulkAssetDeptValue, setBulkAssetLocationValue, setEditAssetModal, setQrStickerModal, setReturnModal, setSelectedAssetIds, setShowBulkAssetCategory, setShowBulkAssetDept, setShowBulkAssetLocation, setShowBulkImportAssets, setTransferModal, showBulkAssetCategory, showBulkAssetDept, showBulkAssetLocation } = useAppData();
+  const { assetFilterCategory, assetFilterDept, assetFilterStatus, assets, bulkAssetCategoryValue, bulkAssetDeptValue, bulkAssetLocationValue, departments, filteredAssets, handleBulkAssetCategoryChange, handleBulkAssetDeptChange, handleBulkAssetLocationChange, handleBulkAssetStatusChange, handleBulkDeleteAssets, handleDeleteAsset, handleDisposeAsset, hasPermission, selectedAssetIds, setAddAssetModal, setAllocateModal, setAssetDetailModal, setAssetFilterCategory, setAssetFilterDept, setAssetFilterStatus, setBulkAssetCategoryValue, setBulkAssetDeptValue, setBulkAssetLocationValue, setEditAssetModal, setQrStickerModal, setReturnModal, setSelectedAssetIds, setShowBulkAssetCategory, setShowBulkAssetDept, setShowBulkAssetLocation, setShowBulkImportAssets, setTransferModal, showBulkAssetCategory, showBulkAssetDept, showBulkAssetLocation, locations } = useAppData();
 
   return (
             <>
@@ -112,13 +112,12 @@ export default function AssetsPage() {
                       <button className="btn btn-secondary btn-sm" onClick={() => setShowBulkAssetLocation(!showBulkAssetLocation)}>Location ▾</button>
                       {showBulkAssetLocation && (
                         <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '200px', marginBottom: '4px' }}>
-                          <input 
-                            type="text" 
-                            className="form-input form-input-sm" 
-                            placeholder="Enter location..." 
-                            value={bulkAssetLocationValue} 
-                            onChange={e => setBulkAssetLocationValue(e.target.value)} 
-                            style={{ height: '32px', marginBottom: '4px'}}
+                          <CustomSelect
+                            options={locations.map(l => ({ value: l, label: l }))}
+                            value={bulkAssetLocationValue}
+                            onChange={e => setBulkAssetLocationValue(e.target.value)}
+                            searchable
+                            placeholder={locations.length ? 'Select location…' : 'No locations available'}
                           />
                           <SpinnerButton className="btn btn-primary btn-sm" onClick={handleBulkAssetLocationChange} loadingText="Applying…">Apply</SpinnerButton>
                         </div>

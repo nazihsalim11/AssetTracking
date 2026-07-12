@@ -29,6 +29,7 @@ const ticketsRoutes = require('./src/routes/tickets');
 const authRoutes = require('./src/routes/auth');
 const usersRoutes = require('./src/routes/users');
 const filesRoutes = require('./src/routes/files');
+const mastersRoutes = require('./src/routes/masters');
 const createActorOf = require('./src/utils/actor');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -203,6 +204,11 @@ authRoutes.register(app, { JWT_SECRET });
 // Extracted verbatim to src/routes/users.js (departments + user CRUD + bulk ops),
 // including the createSingleUser helper. Registered in place to keep route order.
 usersRoutes.register(app, { requireUser, invalidateUserRole, actorOf });
+
+// --- DEPARTMENT & LOCATION MASTERS ---
+// Database-driven master data; the dropdowns across every module read from these.
+// Registered here so its GET /api/departments supersedes the retired directory-derived one.
+mastersRoutes.register(app, { requirePermission, requireUser });
 
 // --- FILE UPLOAD API ---
 // Extracted verbatim to src/routes/files.js (upload + signed-url); the multer

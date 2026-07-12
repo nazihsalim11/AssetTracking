@@ -952,6 +952,99 @@ const runMigrations = async () => {
       ON CONFLICT DO NOTHING;
     `);
 
+    // 15. Department & Location masters.
+    //
+    // Departments and locations were previously free text (columns on assets/users)
+    // with a hardcoded fallback list in the frontend that masked backend failures.
+    // These become first-class master tables so every module can populate a searchable
+    // dropdown from a single source of truth. They are seeded once from the distinct
+    // values that already exist in the data, so nothing is lost on first migration.
+    //
+    //   - is_active drives an archive-without-delete workflow: an archived department
+    //     stops appearing in pickers but the historical rows that reference its name
+    //     stay valid (we store the name, not just the id, on records like assets).
+    await db.directQuery(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        description TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS departments_name_lower_idx ON departments (LOWER(name));
+
+      CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(160) NOT NULL,
+        address TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS locations_name_lower_idx ON locations (LOWER(name));
+    `);
+
+    // Seed the masters from every distinct value already present in the data, so the
+    // masters immediately reflect reality. LOWER()-deduped and ON CONFLICT DO NOTHING,
+    // so re-running is a no-op and admin edits are never overwritten.
+    await db.directQuery(`
+      INSERT INTO departments (name)
+      SELECT DISTINCT TRIM(department) FROM (
+        SELECT department FROM users
+        UNION ALL SELECT department FROM assets
+        UNION ALL SELECT associate_department FROM assets
+      ) d
+      WHERE department IS NOT NULL AND TRIM(department) <> ''
+      ON CONFLICT (LOWER(name)) DO NOTHING;
+
+      INSERT INTO locations (name)
+      SELECT DISTINCT TRIM(location) FROM assets
+      WHERE location IS NOT NULL AND TRIM(location) <> ''
+      ON CONFLICT (LOWER(name)) DO NOTHING;
+    `);
+
+    // 16. Notification-driven lifecycle fields (used by the scheduled jobs, section 17):
+    //   - assets.reorder_level: below-or-equal available_quantity triggers a Low Inventory
+    //     alert. 0 (the default) means "no reorder tracking", so existing assets stay quiet.
+    //   - asset_assignments.expected_return_date: the date a temporarily-assigned asset is
+    //     due back; drives the Returns Due reminders.
+    await db.directQuery(`
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS reorder_level INT NOT NULL DEFAULT 0;
+      ALTER TABLE asset_assignments ADD COLUMN IF NOT EXISTS expected_return_date DATE;
+    `);
+
+    // 17. Vendor foreign keys on invoices and AMCs. Historically both stored only a free-text
+    //     vendor name; they now carry a vendor_id into the vendor master (section 7i) while the
+    //     name column is retained and kept in sync for display and backwards compatibility.
+    //
+    //     invoices/amcs are created by seed.js (which, by convention, runs before migrations —
+    //     as section 2's ALTER of the seed-created assets table already assumes). The guards
+    //     below make these ALTERs order-independent regardless: if a table is not present yet
+    //     they are skipped rather than aborting the whole migration.
+    await db.directQuery(`
+      DO $$
+      BEGIN
+        IF to_regclass('public.invoices') IS NOT NULL THEN
+          ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vendor_id INT REFERENCES vendors(id) ON DELETE SET NULL;
+        END IF;
+        IF to_regclass('public.amcs') IS NOT NULL THEN
+          ALTER TABLE amcs ADD COLUMN IF NOT EXISTS vendor_id INT REFERENCES vendors(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // 18. Extra reminder-window settings for the new scheduled jobs (section 3 of the audit).
+    //     Each is a lead time in days; the jobs fire the first time an item enters the window.
+    await db.directQuery(`
+      ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS service_due_reminder_days INT NOT NULL DEFAULT 7;
+      ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS payment_due_reminder_days INT NOT NULL DEFAULT 7;
+      ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS return_due_reminder_days INT NOT NULL DEFAULT 7;
+      ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS invoice_pending_grace_days INT NOT NULL DEFAULT 30;
+    `);
+
     console.log('Database migrations completed successfully.');
   } catch (err) {
     console.error('Database migration failed:', err);

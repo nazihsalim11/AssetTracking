@@ -152,6 +152,11 @@ async function processEmployeeImport(jobId, employees) {
     const takenEmails = new Set(existing.rows.map((r) => r.email).filter(Boolean));
     const takenUsernames = new Set(existing.rows.map((r) => r.username).filter(Boolean));
 
+    // Department master, for validating the sheet's Department column against the single
+    // source of truth. Only enforced once the master is populated.
+    const deptMaster = await client.query('SELECT LOWER(name) AS name FROM departments WHERE is_active');
+    const validDepartments = new Set(deptMaster.rows.map((r) => r.name));
+
     // bcryptjs costs ~150ms per hash and blocks the event loop. The generated temp
     // password is a known constant that every such account must reset on first
     // login, so hashing it once leaks nothing that the constant does not already.
@@ -174,6 +179,10 @@ async function processEmployeeImport(jobId, employees) {
       const { employeeId, firstName, lastName, email, department, designation, status, password } = emp;
 
       const { errors, formattedPhone, targetRole } = validateEmployeeRow(emp);
+      const deptValue = (department || '').trim();
+      if (deptValue && validDepartments.size && !validDepartments.has(deptValue.toLowerCase())) {
+        errors.push(`Department "${deptValue}" is not in the Department master. Add it under Users → Departments & Locations first.`);
+      }
       if (errors.length > 0) {
         summary.failed++;
         summary.errors.push({ row: rowNum, employeeId, error: errors.join(', ') });
@@ -392,6 +401,18 @@ function register(app) {
       const validSubtypes = {};
       for (const r of subtypeRows.rows) (validSubtypes[r.category] = validSubtypes[r.category] || new Set()).add(r.name);
 
+      // Department & Location masters, loaded once. A value in the sheet is validated
+      // against the active master (the single source of truth) — the importer honours the
+      // masters exactly like the in-app dropdowns do, rather than accepting free text.
+      // Validation only bites once the master is populated, so a brand-new system with no
+      // departments/locations yet is not blocked from its first import.
+      const [deptMaster, locMaster] = await Promise.all([
+        client.query('SELECT LOWER(name) AS name FROM departments WHERE is_active'),
+        client.query('SELECT LOWER(name) AS name FROM locations WHERE is_active')
+      ]);
+      const validDepartments = new Set(deptMaster.rows.map((r) => r.name));
+      const validLocations = new Set(locMaster.rows.map((r) => r.name));
+
       for (let i = 0; i < assets.length; i++) {
         const rowNum = i + 1;
         const asset = assets[i];
@@ -415,6 +436,21 @@ function register(app) {
         const subtype = (type || '').trim();
         if (subtype && validSubtypes[category] && !validSubtypes[category].has(subtype.toLowerCase())) {
           errors.push(`"${subtype}" is not a valid Asset Tag Subtype for category "${category}"`);
+        }
+
+        // Department & Location must come from their masters when supplied (and once the
+        // master exists), mirroring the in-app dropdowns.
+        const deptValue = (department || '').trim();
+        if (deptValue && validDepartments.size && !validDepartments.has(deptValue.toLowerCase())) {
+          errors.push(`Department "${deptValue}" is not in the Department master. Add it under Users → Departments & Locations first.`);
+        }
+        const locValue = (location || '').trim();
+        if (locValue && validLocations.size && !validLocations.has(locValue.toLowerCase())) {
+          errors.push(`Location "${locValue}" is not in the Location master. Add it under Users → Departments & Locations first.`);
+        }
+        const assocDeptValue = (associateDepartment || '').trim();
+        if (assocDeptValue && validDepartments.size && !validDepartments.has(assocDeptValue.toLowerCase())) {
+          errors.push(`Associate Department "${assocDeptValue}" is not in the Department master.`);
         }
 
         const lifespan = depreciationLifeYears === undefined || depreciationLifeYears === null || depreciationLifeYears === ''

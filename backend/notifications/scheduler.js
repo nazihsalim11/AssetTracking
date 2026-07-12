@@ -87,6 +87,166 @@ async function checkAmcExpiries() {
   return rows.length;
 }
 
+/* --------------------------------------------------- AMC service due */
+
+// Periodic-service cadence in days, keyed off the AMC's service_schedule label.
+const SCHEDULE_DAYS = {
+  weekly: 7, 'bi-weekly': 14, fortnightly: 14, monthly: 30, 'bi-monthly': 60,
+  quarterly: 90, 'half-yearly': 180, 'semi-annual': 180, 'semi-annually': 180,
+  yearly: 365, annual: 365, annually: 365
+};
+
+const scheduleDays = (label) => SCHEDULE_DAYS[String(label || '').trim().toLowerCase()] || null;
+
+/**
+ * Reminders for the *next periodic service visit* of an active AMC (distinct from the
+ * AMC-expiry reminder). The next-due date is derived from the most recent logged service
+ * (or the contract start if none) plus the schedule cadence. Overdue services are reported
+ * too. The event key embeds the computed due date, so once a visit is logged the cadence
+ * advances and the next cycle produces a fresh reminder rather than being suppressed.
+ */
+async function checkServiceDue() {
+  const { service_due_reminder_days: window } = await getSettings();
+
+  const { rows } = await db.query(
+    `SELECT m.id, m.vendor, m.service_schedule, m.start_date, m.end_date, m.service_history,
+            COUNT(a.id)::int AS asset_count
+     FROM amcs m
+     LEFT JOIN assets a ON a.amc_id = m.id
+     WHERE m.end_date >= CURRENT_DATE
+     GROUP BY m.id, m.vendor, m.service_schedule, m.start_date, m.end_date, m.service_history`
+  );
+
+  let evaluated = 0;
+  for (const amc of rows) {
+    const cadence = scheduleDays(amc.service_schedule);
+    if (!cadence) continue; // no recognised cadence → nothing periodic to remind about
+
+    // Most recent service date from the history, else the contract start.
+    const history = Array.isArray(amc.service_history) ? amc.service_history : [];
+    const lastServiceMs = history
+      .map((h) => new Date(h && h.date).getTime())
+      .filter((t) => !Number.isNaN(t))
+      .reduce((max, t) => Math.max(max, t), 0);
+    const baseMs = lastServiceMs || new Date(amc.start_date).getTime();
+    if (Number.isNaN(baseMs)) continue;
+
+    const dueMs = baseMs + cadence * MS_PER_DAY;
+    const daysRemaining = Math.ceil((dueMs - Date.now()) / MS_PER_DAY);
+
+    // Fire when due within the reminder window, or already overdue.
+    if (daysRemaining > window) continue;
+
+    const dueDate = new Date(dueMs).toISOString().split('T')[0];
+    evaluated++;
+    await notify('asset.service_due', `service-due:${amc.id}:${dueDate}`, {
+      amcId: amc.id,
+      vendor: amc.vendor,
+      schedule: amc.service_schedule,
+      dueDate,
+      daysRemaining,
+      assetCount: amc.asset_count
+    });
+  }
+  return evaluated;
+}
+
+/* ----------------------------------------------------- pending payments */
+
+/**
+ * Invoices that remain unpaid past a grace period after their invoice date. One reminder
+ * per invoice (the event key is just the invoice id) so a long-unpaid invoice does not
+ * nag daily; marking it paid and it later reverting is a rare enough case to accept.
+ */
+async function checkPendingPayments() {
+  const { invoice_pending_grace_days: grace } = await getSettings();
+
+  const { rows } = await db.query(
+    `SELECT id, vendor, amount, gst, date, payment_status,
+            (CURRENT_DATE - date)::int AS age_days
+     FROM invoices
+     WHERE payment_status IN ('Pending', 'Partially Paid', 'Overdue')
+       AND date <= CURRENT_DATE - ($1 || ' days')::interval`,
+    [grace]
+  );
+
+  for (const inv of rows) {
+    await notify('finance.payment_pending', `payment-pending:${inv.id}`, {
+      invoiceId: inv.id,
+      vendor: inv.vendor,
+      amount: inv.amount,
+      status: inv.payment_status,
+      date: inv.date,
+      ageDays: inv.age_days
+    });
+  }
+  return rows.length;
+}
+
+/* -------------------------------------------------------- returns due */
+
+/**
+ * Reminders for assigned assets whose expected_return_date is within the window (or past).
+ * The event key embeds the window, mirroring the warranty reminder: changing the lead time
+ * legitimately produces a fresh reminder rather than being suppressed by the old one.
+ */
+async function checkReturnsDue() {
+  const { return_due_reminder_days: window } = await getSettings();
+
+  const { rows } = await db.query(
+    `SELECT ag.id, ag.asset_id, ag.employee_name, ag.department, ag.expected_return_date,
+            a.name AS asset_name
+     FROM asset_assignments ag
+     LEFT JOIN assets a ON a.id = ag.asset_id
+     WHERE ag.status = 'Assigned'
+       AND ag.expected_return_date IS NOT NULL
+       AND ag.expected_return_date <= CURRENT_DATE + ($1 || ' days')::interval`,
+    [window]
+  );
+
+  for (const r of rows) {
+    await notify('asset.return_due', `return-due:${r.id}:${window}`, {
+      assignmentId: r.id,
+      assetId: r.asset_id,
+      assetName: r.asset_name || r.asset_id,
+      employeeName: r.employee_name,
+      department: r.department,
+      dueDate: r.expected_return_date,
+      daysRemaining: daysUntil(r.expected_return_date)
+    });
+  }
+  return rows.length;
+}
+
+/* ------------------------------------------------------- low inventory */
+
+/**
+ * Low-stock alerts for assets tracked with a reorder level. The event key embeds the
+ * current available quantity so a *further* drop re-notifies, while sitting at the same
+ * level does not spam; replenishing above the threshold and dropping again yields a new key.
+ */
+async function checkLowInventory() {
+  const { rows } = await db.query(
+    `SELECT id, name, category::text AS category, location, available_quantity, reorder_level
+     FROM assets
+     WHERE status <> 'Disposed'
+       AND reorder_level > 0
+       AND available_quantity <= reorder_level`
+  );
+
+  for (const a of rows) {
+    await notify('asset.low_inventory', `low-inventory:${a.id}:${a.available_quantity}`, {
+      assetId: a.id,
+      assetName: a.name,
+      category: a.category,
+      location: a.location,
+      availableQuantity: a.available_quantity,
+      reorderLevel: a.reorder_level
+    });
+  }
+  return rows.length;
+}
+
 /* ------------------------------------------------------------------ SLA */
 
 const OPEN_STATUSES = ['Resolved', 'Closed'];
@@ -295,9 +455,24 @@ async function checkSlaEscalations() {
 async function runDailyChecks() {
   console.log('[notifications] running daily lifecycle checks...');
   try {
-    const warranties = await checkWarrantyExpiries();
-    const amcs = await checkAmcExpiries();
-    console.log(`[notifications] daily checks: ${warranties} warranty, ${amcs} AMC reminder(s) evaluated`);
+    // Each check is independent, so one failing (e.g. a data-shape surprise) must not
+    // stop the others from running.
+    const results = await Promise.allSettled([
+      checkWarrantyExpiries(),
+      checkAmcExpiries(),
+      checkServiceDue(),
+      checkPendingPayments(),
+      checkReturnsDue(),
+      checkLowInventory()
+    ]);
+    const labels = ['warranty', 'AMC expiry', 'service due', 'pending payment', 'returns due', 'low inventory'];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        console.log(`[notifications] ${labels[i]}: ${r.value} reminder(s) evaluated`);
+      } else {
+        console.error(`[notifications] ${labels[i]} check failed:`, r.reason);
+      }
+    });
   } catch (err) {
     console.error('[notifications] daily checks failed:', err);
   }
@@ -321,6 +496,10 @@ module.exports = {
   runSlaChecks,
   checkWarrantyExpiries,
   checkAmcExpiries,
+  checkServiceDue,
+  checkPendingPayments,
+  checkReturnsDue,
+  checkLowInventory,
   checkSlaApproaching,
   checkSlaBreaches,
   checkSlaEscalations

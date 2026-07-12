@@ -51,23 +51,25 @@ function register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_AS
     const {
       id, name, serialNumber, category, type, status, cost, purchaseDate,
       warrantyExpiry, department, associateDepartment, location, amcId, invoiceId,
-      assignedEmployee, depreciationLifeYears, notes
+      assignedEmployee, depreciationLifeYears, notes, reorderLevel
     } = req.body;
 
     const query = `
       INSERT INTO assets (
         id, name, serial_number, category, type, status, cost, purchase_date,
         warranty_expiry, department, associate_department, location, amc_id, invoice_id,
-        assigned_employee, depreciation_life_years, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        assigned_employee, depreciation_life_years, notes, reorder_level
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *;
     `;
     // Useful Lifespan is optional: an omitted/blank value is stored as NULL rather
     // than being forced to a default, so "no value" is preserved faithfully.
+    // reorder_level drives Low Inventory alerts; 0 (the default) means "not tracked".
     const values = [
       id, name, serialNumber, category, type, status || 'Available', cost || 0, purchaseDate || null,
       warrantyExpiry || null, department || '', associateDepartment || null, location || '', amcId || null, invoiceId || null,
-      assignedEmployee || '', depreciationLifeYears ? parseInt(depreciationLifeYears) : null, notes || ''
+      assignedEmployee || '', depreciationLifeYears ? parseInt(depreciationLifeYears) : null, notes || '',
+      reorderLevel ? parseInt(reorderLevel) : 0
     ];
 
     try {
@@ -124,7 +126,8 @@ function register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_AS
       depreciationLifeYears: 'depreciation_life_years',
       disposalDate: 'disposal_date',
       disposalReason: 'disposal_reason',
-      notes: 'notes'
+      notes: 'notes',
+      reorderLevel: 'reorder_level'
     };
 
     const setClauses = [];

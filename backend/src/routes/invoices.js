@@ -1,5 +1,6 @@
 const db = require('../../db');
 const notifications = require('../../notifications');
+const { resolveVendor } = require('../utils/vendor');
 
 const normalizeAssetIds = (assetIds) =>
   [...new Set((assetIds || []).map((id) => String(id).trim()).filter(Boolean))];
@@ -111,13 +112,21 @@ function register(app, { requirePermission, actorOf }) {
   app.post('/api/invoices', async (req, res) => {
     const actingUser = await requirePermission(req, res, 'finance', 'create');
     if (!actingUser) return;
-    const { id, poReference, vendor, amount, gst, date, paymentStatus, fileName } = req.body;
+    const { id, poReference, amount, gst, date, paymentStatus, fileName } = req.body;
+
+    let vendorId, vendorName;
+    try {
+      ({ vendorId, vendorName } = await resolveVendor(req.body));
+    } catch (err) {
+      return res.status(err.statusCode || 400).json({ error: err.message });
+    }
+
     const query = `
-      INSERT INTO invoices (id, po_reference, vendor, amount, gst, date, payment_status, file_name)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO invoices (id, po_reference, vendor, vendor_id, amount, gst, date, payment_status, file_name)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *;
     `;
-    const values = [id, poReference || '', vendor, amount || 0, gst || 0, date, paymentStatus || 'Pending', fileName || ''];
+    const values = [id, poReference || '', vendorName, vendorId, amount || 0, gst || 0, date, paymentStatus || 'Pending', fileName || ''];
 
     try {
       const result = await db.query(query, values);
@@ -142,7 +151,7 @@ function register(app, { requirePermission, actorOf }) {
     const gateUser = await requirePermission(req, res, 'finance', 'edit');
     if (!gateUser) return;
     const { id } = req.params;
-    const { paymentStatus, fileName } = req.body;
+    const { paymentStatus, fileName, vendorId, vendor } = req.body;
     const setClauses = [];
     const values = [];
     let idx = 1;
@@ -156,6 +165,20 @@ function register(app, { requirePermission, actorOf }) {
       setClauses.push(`file_name = $${idx}`);
       values.push(fileName);
       idx++;
+    }
+    // Re-point the vendor via the registry (or a free-text override). Keeps vendor_id and
+    // the denormalised name in step.
+    if (vendorId !== undefined || vendor !== undefined) {
+      let resolved;
+      try {
+        resolved = await resolveVendor({ vendorId, vendor }, { required: false });
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ error: err.message });
+      }
+      if (resolved.vendorName !== null) {
+        setClauses.push(`vendor = $${idx}`); values.push(resolved.vendorName); idx++;
+        setClauses.push(`vendor_id = $${idx}`); values.push(resolved.vendorId); idx++;
+      }
     }
 
     if (setClauses.length === 0) {

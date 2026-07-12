@@ -71,26 +71,9 @@ async function createSingleUser(client, { username, password, name, role, email,
 // Departments, the user directory, user CRUD and the bulk operations. Extracted
 // verbatim from server.js. createSingleUser() above is shared with manual creation.
 function register(app, { requireUser, invalidateUserRole, actorOf }) {
-  // Department options, derived from the directory rather than a hardcoded list, so the
-  // dropdowns reflect the departments that actually exist. Unioned with a small seed set
-  // so a brand-new database still offers sensible defaults.
-  app.get('/api/departments', async (req, res) => {
-    const user = requireUser(req, res);
-    if (!user) return;
-    try {
-      const { rows } = await db.query(
-        `SELECT DISTINCT TRIM(department) AS department FROM users
-         WHERE department IS NOT NULL AND TRIM(department) <> ''
-         ORDER BY 1`
-      );
-      const seeds = ['IT', 'HR', 'Finance', 'Operations', 'Administration'];
-      const merged = [...new Set([...rows.map((r) => r.department), ...seeds])].sort();
-      res.json(merged);
-    } catch (err) {
-      console.error('GET /api/departments failed:', err);
-      res.status(500).json({ error: 'Could not load departments: ' + err.message });
-    }
-  });
+  // NOTE: GET /api/departments now lives in src/routes/masters.js and is served from the
+  // departments master table (the single source of truth) rather than being derived from
+  // the user directory with a hardcoded seed fallback.
 
   app.get('/api/users', async (req, res) => {
     try {

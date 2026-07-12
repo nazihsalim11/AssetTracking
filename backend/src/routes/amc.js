@@ -1,4 +1,5 @@
 const db = require('../../db');
+const { resolveVendor } = require('../utils/vendor');
 
 // AMC (annual maintenance contract) API — extracted verbatim from server.js.
 function register(app, { requirePermission }) {
@@ -15,7 +16,7 @@ function register(app, { requirePermission }) {
   app.post('/api/amcs', async (req, res) => {
     const actingUser = await requirePermission(req, res, 'amc', 'create');
     if (!actingUser) return;
-    const { id, vendor, cost, startDate, endDate, serviceSchedule, agreementFile, serviceHistory, poNumber } = req.body;
+    const { id, cost, startDate, endDate, serviceSchedule, agreementFile, serviceHistory, poNumber } = req.body;
 
     // The PO number is the contract's business identifier, so it is required and
     // unique. Uniqueness is enforced case-insensitively by an index; the 23505 below
@@ -24,13 +25,21 @@ function register(app, { requirePermission }) {
       return res.status(400).json({ error: 'PO Number is required for an AMC contract.' });
     }
 
+    // Vendor now comes from the registry (vendor_id); the name is snapshotted for display.
+    let vendorId, vendorName;
+    try {
+      ({ vendorId, vendorName } = await resolveVendor(req.body));
+    } catch (err) {
+      return res.status(err.statusCode || 400).json({ error: err.message });
+    }
+
     const query = `
-      INSERT INTO amcs (id, vendor, cost, start_date, end_date, service_schedule, agreement_file, service_history, po_number)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO amcs (id, vendor, vendor_id, cost, start_date, end_date, service_schedule, agreement_file, service_history, po_number)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *;
     `;
     const values = [
-      id, vendor, cost || 0, startDate, endDate, serviceSchedule || 'Quarterly', agreementFile || '',
+      id, vendorName, vendorId, cost || 0, startDate, endDate, serviceSchedule || 'Quarterly', agreementFile || '',
       JSON.stringify(serviceHistory || []), String(poNumber).trim()
     ];
 

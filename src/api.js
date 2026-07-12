@@ -261,8 +261,18 @@ export const api = {
   getNotificationPreferences: () => apiFetch('/notification-preferences'),
   updateNotificationPreferences: (payload) => apiFetch('/notification-preferences', { method: 'PUT', body: JSON.stringify(payload) }),
 
-  // Department options, derived from the directory.
-  getDepartments: () => apiFetch('/departments'),
+  // Department & Location masters — the single source of truth for their dropdowns.
+  // List endpoints return active rows as { id, name, description, isActive }; pass
+  // { all: true } from admin screens to include archived rows.
+  getDepartments: (params = {}) => apiFetch(`/departments${params.all ? '?all=true' : ''}`),
+  createDepartment: (dept) => apiFetch('/departments', { method: 'POST', body: JSON.stringify(dept) }),
+  updateDepartment: (id, fields) => apiFetch(`/departments/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  deleteDepartment: (id) => apiFetch(`/departments/${id}`, { method: 'DELETE' }),
+
+  getLocations: (params = {}) => apiFetch(`/locations${params.all ? '?all=true' : ''}`),
+  createLocation: (loc) => apiFetch('/locations', { method: 'POST', body: JSON.stringify(loc) }),
+  updateLocation: (id, fields) => apiFetch(`/locations/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  deleteLocation: (id) => apiFetch(`/locations/${id}`, { method: 'DELETE' }),
 
   // Role permissions — the authoritative matrix, fetched from and saved to the DB.
   getRolePermissions: () => apiFetch('/role-permissions'),

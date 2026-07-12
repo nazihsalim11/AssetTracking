@@ -208,19 +208,30 @@ async function technicianDashboard(user, query) {
 /* -------------------------------------------------------------- asset dashboard */
 
 async function assetDashboard() {
+  // `total` is a straight COUNT of asset *rows* — the actual number of assets on the
+  // ledger. (The old dashboard summed per-asset quantities, which is why a 54-row ledger
+  // reported thousands.) Quantity sums are reported separately as *_units.
   const counts = await db.query(
     `SELECT
        COUNT(*)::int AS total,
        COUNT(*) FILTER (WHERE assigned_employee IS NOT NULL AND TRIM(assigned_employee) <> '' AND assigned_employee <> 'Inventory')::int AS assigned,
        COUNT(*) FILTER (WHERE assigned_employee IS NULL OR TRIM(assigned_employee) = '' OR assigned_employee = 'Inventory')::int AS unassigned,
+       COALESCE(SUM(total_quantity), 0)::int AS total_units,
+       COALESCE(SUM(assigned_quantity), 0)::int AS assigned_units,
+       COALESCE(SUM(available_quantity), 0)::int AS available_units,
        COUNT(*) FILTER (WHERE warranty_expiry IS NOT NULL AND warranty_expiry > CURRENT_DATE AND warranty_expiry <= CURRENT_DATE + INTERVAL '90 days')::int AS warranty_expiring,
-       COUNT(*) FILTER (WHERE warranty_expiry IS NOT NULL AND warranty_expiry < CURRENT_DATE)::int AS warranty_expired
+       COUNT(*) FILTER (WHERE warranty_expiry IS NOT NULL AND warranty_expiry < CURRENT_DATE)::int AS warranty_expired,
+       COUNT(*) FILTER (WHERE reorder_level > 0 AND available_quantity <= reorder_level)::int AS low_inventory
      FROM assets WHERE status <> 'Disposed'`
   );
 
+  // Cast to text before COALESCE: category and status are enums (asset_category /
+  // asset_status), and coalescing them with the text literal 'Unspecified' otherwise
+  // fails with "invalid input value for enum ... Unspecified". ::text is a no-op for the
+  // plain text columns (department, location).
   const groupBy = async (col) => {
     const { rows } = await db.query(
-      `SELECT COALESCE(${col}, 'Unspecified') AS k, COUNT(*)::int AS c FROM assets WHERE status <> 'Disposed' GROUP BY 1 ORDER BY c DESC`
+      `SELECT COALESCE(${col}::text, 'Unspecified') AS k, COUNT(*)::int AS c FROM assets WHERE status <> 'Disposed' GROUP BY 1 ORDER BY c DESC`
     );
     return rows.reduce((a, r) => { a[r.k] = r.c; return a; }, {});
   };
@@ -232,14 +243,37 @@ async function assetDashboard() {
     `SELECT COUNT(*)::int AS c FROM amcs WHERE end_date > CURRENT_DATE AND end_date <= CURRENT_DATE + INTERVAL '90 days'`
   );
 
+  // Most recently registered assets, for the "Recently Added" widget.
+  const recent = await db.query(
+    `SELECT id, name, category::text AS category, department, status::text AS status, created_at
+     FROM assets ORDER BY created_at DESC NULLS LAST LIMIT 6`
+  );
+
+  // The specific items sitting at or below their reorder level, for the Low Inventory widget.
+  const lowStock = await db.query(
+    `SELECT id, name, category::text AS category, location, available_quantity, reorder_level
+     FROM assets
+     WHERE status <> 'Disposed' AND reorder_level > 0 AND available_quantity <= reorder_level
+     ORDER BY available_quantity ASC LIMIT 8`
+  );
+
   const c = counts.rows[0];
   return {
     counts: {
       total: c.total, assigned: c.assigned, unassigned: c.unassigned,
+      totalUnits: c.total_units, assignedUnits: c.assigned_units, availableUnits: c.available_units,
       warrantyExpiring: c.warranty_expiring, warrantyExpired: c.warranty_expired,
-      amcExpiring: amcExpiring.rows[0].c
+      amcExpiring: amcExpiring.rows[0].c, lowInventory: c.low_inventory
     },
-    byCategory, byDepartment, byLocation, byStatus
+    byCategory, byDepartment, byLocation, byStatus,
+    recentlyAdded: recent.rows.map((r) => ({
+      id: r.id, name: r.name, category: r.category, department: r.department,
+      status: r.status, createdAt: r.created_at
+    })),
+    lowStock: lowStock.rows.map((r) => ({
+      id: r.id, name: r.name, category: r.category, location: r.location,
+      availableQuantity: r.available_quantity, reorderLevel: r.reorder_level
+    }))
   };
 }
 

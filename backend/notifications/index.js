@@ -219,8 +219,9 @@ async function resolveRecipients(eventType, ctx) {
       return uniqueById([...stakeholders, ...custodian]);
     }
 
-    case 'amc.expiring': {
-      // Finance owns contract renewals, so they join the admins here.
+    case 'amc.expiring':
+    case 'asset.service_due': {
+      // Finance owns contract renewals and servicing, so they join the admins here.
       const stakeholders = await activeUsers(
         'role::text = ANY($1::text[])',
         [[...ADMIN_ROLES, 'Finance Team']]
@@ -228,6 +229,20 @@ async function resolveRecipients(eventType, ctx) {
       return uniqueById(stakeholders);
     }
 
+    case 'asset.return_due': {
+      // The custodian who must return it, plus the admins who chase it.
+      const stakeholders = await admins();
+      const custodian = ctx.employeeName
+        ? await activeUsers('LOWER(TRIM(name)) = LOWER(TRIM($1))', [ctx.employeeName])
+        : [];
+      return uniqueById([...stakeholders, ...custodian]);
+    }
+
+    case 'asset.low_inventory':
+      // Procurement/facility concern — the admins who can raise a replenishment PO.
+      return uniqueById(await admins());
+
+    case 'finance.payment_pending':
     case 'finance.invoice_created':
     case 'finance.invoice_overdue': {
       // Money is Finance's problem first; admins see it because they see everything.

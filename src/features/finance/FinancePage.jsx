@@ -6,7 +6,7 @@ import { formatINR } from '../../utils/format'
 import { useAppData } from '../../context/AppDataContext'
 
 export default function FinancePage() {
-  const { addToast, addingInvoice, amcs, assets, can, filteredInvoices, financeSubTab, handleAddInvoice, handleBulkDeleteInvoices, handleBulkExportInvoices, handleBulkInvoiceStatusChange, handleBulkMapAssetsToInvoice, handleInvoicePaymentStatus, handleUploadPdfForInvoice, hasPermission, invoiceCurrentPage, invoiceFilterStatus, invoiceItemsPerPage, invoicePdfSearchTerm, invoiceSearchTerm, invoiceSortField, invoiceSortOrder, invoices, isInitialLoading, mappingAssetCategory, mappingAssetSearch, mappingInvoiceAssets, mappingInvoiceId, paginatedInvoices, selectedInvoiceIds, selectedMappingAssets, setAssetDetailModal, setFinanceSubTab, setInvoiceCurrentPage, setInvoiceDetailModal, setInvoiceFilterStatus, setInvoicePdfSearchTerm, setInvoiceSearchTerm, setInvoiceSortField, setInvoiceSortOrder, setMappingAssetCategory, setMappingAssetSearch, setMappingInvoiceId, setSelectedInvoiceIds, setSelectedMappingAssets, setShowBulkImportInvoices, startIndex, totalInvoicePages } = useAppData();
+  const { addToast, addingInvoice, amcs, assets, can, filteredInvoices, financeSubTab, handleAddInvoice, handleBulkDeleteInvoices, handleBulkExportInvoices, handleBulkInvoiceStatusChange, handleBulkMapAssetsToInvoice, handleInvoicePaymentStatus, handleUploadPdfForInvoice, hasPermission, invoiceCurrentPage, invoiceFilterStatus, invoiceItemsPerPage, invoicePdfSearchTerm, invoiceSearchTerm, invoiceSortField, invoiceSortOrder, invoices, isInitialLoading, mappingAssetCategory, mappingAssetSearch, mappingInvoiceAssets, mappingInvoiceId, paginatedInvoices, selectedInvoiceIds, selectedMappingAssets, setAssetDetailModal, setFinanceSubTab, setInvoiceCurrentPage, setInvoiceDetailModal, setInvoiceFilterStatus, setInvoicePdfSearchTerm, setInvoiceSearchTerm, setInvoiceSortField, setInvoiceSortOrder, setMappingAssetCategory, setMappingAssetSearch, setMappingInvoiceId, setSelectedInvoiceIds, setSelectedMappingAssets, setShowBulkImportInvoices, startIndex, totalInvoicePages, vendors, newInvoiceVendorId, setNewInvoiceVendorId } = useAppData();
 
   return (
             <>
@@ -76,8 +76,22 @@ export default function FinancePage() {
                                 <input type="text" name="poReference" placeholder="e.g. PO-2026-99" className="form-input" required />
                               </div>
                               <div className="form-group">
-                                <label className="form-label">Vendor Business Name</label>
-                                <input type="text" name="vendor" placeholder="e.g. Dell Commercial Sales" className="form-input" required />
+                                <label className="form-label">Vendor *</label>
+                                <CustomSelect
+                                  name="vendorId"
+                                  value={newInvoiceVendorId}
+                                  onChange={(e) => setNewInvoiceVendorId(e.target.value)}
+                                  searchable
+                                  required
+                                  placeholder={vendors.length ? 'Select a vendor…' : 'No vendors in registry'}
+                                  searchPlaceholder="Search vendors…"
+                                  options={vendors.map(v => ({ value: String(v.id), label: v.name }))}
+                                />
+                                {vendors.length === 0 && (
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    Add vendors in the Vendor Registry (Purchase Orders → Vendors) first.
+                                  </span>
+                                )}
                               </div>
                               <div className="form-group">
                                 <label className="form-label">Base Invoice Cost (₹)</label>

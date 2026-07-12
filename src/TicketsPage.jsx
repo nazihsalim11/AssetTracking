@@ -21,7 +21,7 @@ import { SpinnerButton } from './SpinnerButton';
 import { useAsyncAction } from './useAsyncAction';
 import { PageSkeleton } from './Skeleton';
 
-const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addToast, canManageTickets = false }) => {
+const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addToast, canManageTickets = false, departments = [] }) => {
   const [tickets, setTickets] = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -773,7 +773,11 @@ const TicketsPage = ({ isApiConnected, currentRole, currentUser, usersList, addT
 
   const distinctRequesters = Array.from(new Set(tickets.map(t => t.createdByName))).filter(Boolean);
   const distinctCategories = ['Software', 'Hardware', 'Network', 'Access Request', 'Billing / Finance', 'General Request', 'Other'];
-  const distinctDepartments = ['IT', 'HR', 'Finance', 'Operations'];
+  // Department options come from the Department master (passed in), not a hardcoded list.
+  // Any department already present on a ticket is unioned in so historical rows stay filterable.
+  const distinctDepartments = Array.from(
+    new Set([...departments, ...tickets.map(t => t.department)])
+  ).filter(Boolean);
 
   return (
     <AsyncBoundary

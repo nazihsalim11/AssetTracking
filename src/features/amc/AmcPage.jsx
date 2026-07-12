@@ -5,7 +5,7 @@ import { formatINR } from '../../utils/format'
 import { useAppData } from '../../context/AppDataContext'
 
 export default function AmcPage() {
-  const { addingAmc, addingServiceRecord, amcSearch, amcs, assets, filteredAmcs, handleAddAMC, handleAddAMCServiceRecord, handleMapAssetToAmc, hasPermission, mapAmcId, mapAssetId, mappingAmcAsset, newAmcServiceSchedule, setAmcSearch, setMapAmcId, setMapAssetId, setNewAmcServiceSchedule } = useAppData();
+  const { addingAmc, addingServiceRecord, amcSearch, amcs, assets, filteredAmcs, handleAddAMC, handleAddAMCServiceRecord, handleMapAssetToAmc, hasPermission, mapAmcId, mapAssetId, mappingAmcAsset, newAmcServiceSchedule, setAmcSearch, setMapAmcId, setMapAssetId, setNewAmcServiceSchedule, vendors, newAmcVendorId, setNewAmcVendorId } = useAppData();
 
   return (
             <>
@@ -49,8 +49,22 @@ export default function AmcPage() {
                         </span>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Support Vendor Partner</label>
-                        <input type="text" name="vendor" placeholder="e.g. Carrier CoolCare" className="form-input" required />
+                        <label className="form-label">Support Vendor Partner *</label>
+                        <CustomSelect
+                          name="vendorId"
+                          value={newAmcVendorId}
+                          onChange={(e) => setNewAmcVendorId(e.target.value)}
+                          searchable
+                          required
+                          placeholder={vendors.length ? 'Select a vendor…' : 'No vendors in registry'}
+                          searchPlaceholder="Search vendors…"
+                          options={vendors.map(v => ({ value: String(v.id), label: v.name }))}
+                        />
+                        {vendors.length === 0 && (
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Add vendors in the Vendor Registry (Purchase Orders → Vendors) before registering an AMC.
+                          </span>
+                        )}
                       </div>
                       <div className="form-group">
                         <label className="form-label">Annual Cost (₹)</label>

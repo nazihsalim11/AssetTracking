@@ -203,7 +203,81 @@ const templates = {
     sms: `AssetFlow: AMC ${c.amcId} (${c.vendor}) expires in ${plural(c.daysRemaining, 'day')}`
   }),
 
+  'asset.service_due': (c) => ({
+    type: c.daysRemaining <= 0 ? 'error' : 'warning',
+    subject: c.daysRemaining <= 0
+      ? `Service overdue: AMC ${c.amcId} (${c.vendor})`
+      : `Service due in ${plural(c.daysRemaining, 'day')}: AMC ${c.amcId}`,
+    inApp: c.daysRemaining <= 0
+      ? `Scheduled service for AMC ${c.amcId} (${c.vendor}) is overdue`
+      : `Scheduled service for AMC ${c.amcId} (${c.vendor}) is due in ${plural(c.daysRemaining, 'day')}`,
+    email:
+      `A ${c.schedule || 'scheduled'} maintenance service is ${c.daysRemaining <= 0 ? 'overdue' : 'coming due'}.\n\n` +
+      `Contract ID:   ${c.amcId}\n` +
+      `Vendor:        ${c.vendor}\n` +
+      `Schedule:      ${c.schedule || 'N/A'}\n` +
+      `Next service:  ${fmtDate(c.dueDate)}\n` +
+      `${c.daysRemaining <= 0 ? `Overdue by:    ${plural(Math.abs(c.daysRemaining), 'day')}\n` : `Due in:        ${plural(c.daysRemaining, 'day')}\n`}` +
+      `Assets under contract: ${c.assetCount}\n\n` +
+      `Recommended action: schedule the service visit with ${c.vendor} and log it against the contract.\n\n— AssetFlow Contract Engine`,
+    sms: `AssetFlow: service for AMC ${c.amcId} (${c.vendor}) ${c.daysRemaining <= 0 ? 'is overdue' : `due in ${plural(c.daysRemaining, 'day')}`}`
+  }),
+
+  'asset.return_due': (c) => ({
+    type: c.daysRemaining <= 0 ? 'error' : 'warning',
+    subject: c.daysRemaining <= 0
+      ? `Asset return overdue: ${c.assetId}`
+      : `Asset return due in ${plural(c.daysRemaining, 'day')}: ${c.assetId}`,
+    inApp: c.daysRemaining <= 0
+      ? `${c.employeeName} was due to return ${c.assetId} (${c.assetName}) by ${fmtDate(c.dueDate)}`
+      : `${c.employeeName} is due to return ${c.assetId} (${c.assetName}) in ${plural(c.daysRemaining, 'day')}`,
+    email:
+      `An assigned asset is ${c.daysRemaining <= 0 ? 'overdue for return' : 'due to be returned'}.\n\n` +
+      `Asset ID:     ${c.assetId}\n` +
+      `Asset name:   ${c.assetName}\n` +
+      `Custodian:    ${c.employeeName}\n` +
+      `Department:   ${c.department || 'N/A'}\n` +
+      `Return by:    ${fmtDate(c.dueDate)}\n` +
+      `${c.daysRemaining <= 0 ? `Overdue by:   ${plural(Math.abs(c.daysRemaining), 'day')}\n` : `Due in:       ${plural(c.daysRemaining, 'day')}\n`}` +
+      `\nRecommended action: follow up with the custodian to collect the asset back into inventory.\n\n— AssetFlow Monitoring`,
+    sms: `AssetFlow: ${c.assetId} return from ${c.employeeName} ${c.daysRemaining <= 0 ? 'is overdue' : `due in ${plural(c.daysRemaining, 'day')}`}`
+  }),
+
+  'asset.low_inventory': (c) => ({
+    type: c.availableQuantity <= 0 ? 'error' : 'warning',
+    subject: c.availableQuantity <= 0
+      ? `Out of stock: ${c.assetId} (${c.assetName})`
+      : `Low stock: ${c.assetId} (${c.assetName})`,
+    inApp: `${c.assetName} (${c.assetId}) is ${c.availableQuantity <= 0 ? 'out of stock' : `low on stock — ${c.availableQuantity} left`} (reorder at ${c.reorderLevel})`,
+    email:
+      `An inventory item has reached its reorder level.\n\n` +
+      `Asset ID:        ${c.assetId}\n` +
+      `Asset name:      ${c.assetName}\n` +
+      `Category:        ${c.category || 'N/A'}\n` +
+      `Location:        ${c.location || 'N/A'}\n` +
+      `Available:       ${c.availableQuantity}\n` +
+      `Reorder level:   ${c.reorderLevel}\n\n` +
+      `Recommended action: raise a purchase order to replenish stock before it runs out.\n\n— AssetFlow Monitoring`,
+    sms: `AssetFlow: ${c.assetId} (${c.assetName}) low stock - ${c.availableQuantity} left (reorder at ${c.reorderLevel})`
+  }),
+
   /* ------------------------------------------------------------- finance */
+
+  'finance.payment_pending': (c) => ({
+    type: 'warning',
+    subject: `Payment pending: invoice ${c.invoiceId} (${c.vendor})`,
+    inApp: `Invoice ${c.invoiceId} from ${c.vendor} has been ${c.status} for ${plural(c.ageDays, 'day')} (${money(c.amount)})`,
+    email:
+      `An invoice payment is still outstanding.\n\n` +
+      `Invoice:   ${c.invoiceId}\n` +
+      `Vendor:    ${c.vendor}\n` +
+      `Amount:    ${money(c.amount)}\n` +
+      `Status:    ${c.status}\n` +
+      `Dated:     ${fmtDate(c.date)}\n` +
+      `Outstanding for: ${plural(c.ageDays, 'day')}\n\n` +
+      `Recommended action: process the payment or update the invoice status.\n\n— AssetFlow Finance`,
+    sms: `AssetFlow: invoice ${c.invoiceId} (${c.vendor}) ${money(c.amount)} still ${c.status} after ${plural(c.ageDays, 'day')}`
+  }),
 
   'finance.invoice_created': (c) => ({
     type: 'info',

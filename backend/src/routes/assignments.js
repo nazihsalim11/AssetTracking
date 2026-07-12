@@ -117,7 +117,7 @@ function register(app, { requireUser, requirePermission, isEmployee }) {
     const actingUser = await requirePermission(req, res, 'allocations', 'create');
     if (!actingUser) return;
 
-    const { assetId, employeeName, quantity, department, notes, date } = req.body;
+    const { assetId, employeeName, quantity, department, notes, date, expectedReturnDate } = req.body;
     const qty = parseInt(quantity) || 1;
     const actor = req.headers['x-user-username'] || 'Admin';
 
@@ -150,12 +150,12 @@ function register(app, { requireUser, requirePermission, isEmployee }) {
       const employeeNameDb = userRes.rows[0].name;
 
       const insertQuery = `
-        INSERT INTO asset_assignments (asset_id, employee_name, user_id, quantity, department, date, notes, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Assigned')
+        INSERT INTO asset_assignments (asset_id, employee_name, user_id, quantity, department, date, notes, status, expected_return_date)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Assigned', $8)
         RETURNING *;
       `;
       const assignmentRes = await client.query(insertQuery, [
-        assetId, employeeNameDb, userId, qty, department || asset.department, date || new Date(), notes || ''
+        assetId, employeeNameDb, userId, qty, department || asset.department, date || new Date(), notes || '', expectedReturnDate || null
       ]);
       const assignment = assignmentRes.rows[0];
 

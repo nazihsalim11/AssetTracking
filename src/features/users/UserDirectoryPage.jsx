@@ -492,7 +492,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                 {showBulkDept && (
                   <div className="card" style={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 10, padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', width: '180px', marginBottom: '4px' }}>
                     <CustomSelect 
-                      options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))} 
+                      options={departments.map(d => ({ value: d, label: d }))} 
                       value={bulkDeptValue} 
                       onChange={e => setBulkDeptValue(e.target.value)}
                     />
@@ -710,7 +710,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
               <div className="form-group">
                 <label className="form-label">Department</label>
                 <CustomSelect
-                  options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))}
+                  options={departments.map(d => ({ value: d, label: d }))}
                   value={formDepartment}
                   onChange={e => setFormDepartment(e.target.value)}
                   disabled={isSubmitting}
@@ -781,7 +781,7 @@ const UserDirectoryPage = ({ usersList, setUsersList, isApiConnected, onBulkImpo
                   <div className="form-group">
                     <label className="form-label">Department</label>
                     <CustomSelect
-                      options={(departments.length ? departments : ['IT', 'HR', 'Finance', 'Operations', 'Administration']).map(d => ({ value: d, label: d }))}
+                      options={departments.map(d => ({ value: d, label: d }))}
                       value={editFormDepartment}
                       onChange={e => setEditFormDepartment(e.target.value)}
                     />

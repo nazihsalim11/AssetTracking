@@ -302,9 +302,18 @@ const money = (n) => `Rs ${Number(n || 0).toLocaleString('en-IN')}`;
 async function filterOptions() {
   const distinct = async (sql) => (await q(sql)).map((r) => r.v).filter((v) => v != null && String(v).trim() !== '');
   const [departments, categories, branches, vendors, employees] = await Promise.all([
-    distinct(`SELECT DISTINCT department AS v FROM assets UNION SELECT DISTINCT department FROM tickets ORDER BY 1`),
+    // Prefer the masters (single source of truth), unioned with any values already present
+    // on records so historical/legacy entries remain filterable.
+    distinct(`SELECT v FROM (
+                SELECT name AS v FROM departments WHERE is_active
+                UNION SELECT department FROM assets
+                UNION SELECT department FROM tickets
+              ) d ORDER BY 1`),
     distinct(`SELECT DISTINCT category::text AS v FROM assets ORDER BY 1`),
-    distinct(`SELECT DISTINCT location AS v FROM assets ORDER BY 1`),
+    distinct(`SELECT v FROM (
+                SELECT name AS v FROM locations WHERE is_active
+                UNION SELECT location FROM assets
+              ) l ORDER BY 1`),
     distinct(`SELECT DISTINCT name AS v FROM vendors UNION SELECT DISTINCT vendor FROM amcs UNION SELECT DISTINCT vendor FROM invoices ORDER BY 1`),
     distinct(`SELECT DISTINCT name AS v FROM users WHERE role::text <> 'Employee' ORDER BY 1`)
   ]);
