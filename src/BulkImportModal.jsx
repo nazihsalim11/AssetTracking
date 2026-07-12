@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { X, Download, FileUp, AlertCircle, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { api } from './api';
 import Modal from './Modal';
 import { ROLE_ORDER } from './permissions';
@@ -44,7 +43,8 @@ const BulkImportModal = ({ isOpen, onClose, type, onImportComplete, isApiConnect
 
   if (!isOpen) return null;
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    const XLSX = await import('xlsx');
     if (type === 'employees') {
       const headers = [
         ["Employee ID", "First Name", "Last Name", "Email", "Phone Number", "Department", "Designation", "Role", "Status"],
@@ -100,6 +100,7 @@ const BulkImportModal = ({ isOpen, onClose, type, onImportComplete, isApiConnect
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
+        const XLSX = await import('xlsx');
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];

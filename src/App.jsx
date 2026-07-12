@@ -1,13 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { silk } from './engine/motion'
 import { openStoredFile } from './files'
 import Modal from './Modal'
-import KnowledgeBasePage from './KnowledgeBasePage'
-import EmailInboxModule from './EmailInboxModule'
-import PurchaseOrdersPage from './PurchaseOrdersPage'
-import EmployeeAssetLookup from './EmployeeAssetLookup'
 import {
   LayoutDashboard,
   Package,
@@ -53,13 +49,22 @@ import { useDismissableLayer } from './useDismissableLayer'
 import { lockBodyScroll, unlockBodyScroll } from './scrollLock'
 import { api } from './api'
 import BulkImportModal from './BulkImportModal'
-import TicketsPage from './TicketsPage'
-import SlaManagementPage from './SlaManagementPage'
 import DashboardsPanel from './DashboardsPanel'
-import ReportsCenter from './ReportsCenter'
-import QRCodeSticker from './features/assets/QRCodeSticker'
-import UserManagementPage from './features/users/UserManagementPage'
 import { formatINR } from './utils/format'
+
+// Route-level page components are code-split: each loads as its own chunk the first
+// time its tab is opened, keeping them out of the initial bundle. They render inside
+// the <Suspense> boundary in the page container below. DashboardsPanel stays eager
+// because it is the default landing view.
+const KnowledgeBasePage = lazy(() => import('./KnowledgeBasePage'))
+const EmailInboxModule = lazy(() => import('./EmailInboxModule'))
+const PurchaseOrdersPage = lazy(() => import('./PurchaseOrdersPage'))
+const EmployeeAssetLookup = lazy(() => import('./EmployeeAssetLookup'))
+const TicketsPage = lazy(() => import('./TicketsPage'))
+const SlaManagementPage = lazy(() => import('./SlaManagementPage'))
+const ReportsCenter = lazy(() => import('./ReportsCenter'))
+const QRCodeSticker = lazy(() => import('./features/assets/QRCodeSticker'))
+const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'))
 import { clearCachedUserData } from './utils/cache'
 import { VALID_TABS } from './constants/tabs'
 import './App.css'
@@ -2705,6 +2710,8 @@ function App() {
               onRetry={retryInitialLoad}
               skeleton={<PageSkeleton />}
             >
+            {/* Suspense boundary for the lazily-loaded page components below. */}
+            <Suspense fallback={<PageSkeleton />}>
             {activePageDenied ? (
               <div className="empty-state" role="alert" style={{ minHeight: '320px' }}>
                 <div className="empty-state-icon" style={{ color: 'var(--status-disposed)' }}>
@@ -4852,6 +4859,7 @@ function App() {
           )}
             </>
             )}
+            </Suspense>
             </AsyncBoundary>
             </motion.div>
           </AnimatePresence>
