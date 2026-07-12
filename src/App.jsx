@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Html5QrcodeScanner } from 'html5-qrcode'
-import { jsPDF } from 'jspdf'
-import * as XLSX from 'xlsx'
 import { silk } from './engine/motion'
 import { openStoredFile } from './files'
 import Modal from './Modal'
@@ -453,36 +450,44 @@ function App() {
 
   useEffect(() => {
     let scanner = null;
+    let cancelled = false;
     if (isWebcamScanning) {
-      setTimeout(() => {
-        const element = document.getElementById("reader");
-        if (element) {
-          scanner = new Html5QrcodeScanner("reader", {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0
-          }, false);
+      // html5-qrcode is a large dependency and only the webcam scanner needs it, so it
+      // is loaded on demand the moment the camera view opens.
+      import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
+        if (cancelled) return;
+        setTimeout(() => {
+          if (cancelled) return;
+          const element = document.getElementById("reader");
+          if (element) {
+            scanner = new Html5QrcodeScanner("reader", {
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0
+            }, false);
 
-          scanner.render((decodedText) => {
-            setIsWebcamScanning(false);
-            scanner.clear().catch(err => console.error("Failed to clear scanner:", err));
-            
-            const assetId = decodedText.trim();
-            const asset = assets.find(a => a.id === assetId || assetId.includes(a.id));
-            if (asset) {
-              setAssetDetailModal(asset);
-              addToast("QR Code Scanned", `Asset lookup found: ${asset.id}`, "success");
-            } else {
-              addToast("Not Found", `No asset matches: "${assetId}"`, "error");
-            }
-          }, () => {
-            // Frame scan failure - ignore
-          });
-        }
-      }, 300);
+            scanner.render((decodedText) => {
+              setIsWebcamScanning(false);
+              scanner.clear().catch(err => console.error("Failed to clear scanner:", err));
+
+              const assetId = decodedText.trim();
+              const asset = assets.find(a => a.id === assetId || assetId.includes(a.id));
+              if (asset) {
+                setAssetDetailModal(asset);
+                addToast("QR Code Scanned", `Asset lookup found: ${asset.id}`, "success");
+              } else {
+                addToast("Not Found", `No asset matches: "${assetId}"`, "error");
+              }
+            }, () => {
+              // Frame scan failure - ignore
+            });
+          }
+        }, 300);
+      });
     }
 
     return () => {
+      cancelled = true;
       if (scanner) {
         scanner.clear().catch(err => console.log("Failed to clear scanner on unmount:", err));
       }
@@ -1476,16 +1481,19 @@ function App() {
     }
   };
 
-  // Bulk Export Invoices to Excel
-  const handleBulkExportInvoices = () => {
-    const listToExport = selectedInvoiceIds.length > 0 
-      ? invoices.filter(inv => selectedInvoiceIds.includes(inv.id)) 
+  // Bulk Export Invoices to Excel. xlsx is imported on demand to keep it out of the
+  // initial bundle.
+  const handleBulkExportInvoices = async () => {
+    const listToExport = selectedInvoiceIds.length > 0
+      ? invoices.filter(inv => selectedInvoiceIds.includes(inv.id))
       : invoices;
-    
+
     if (listToExport.length === 0) {
       addToast("No Data", "No invoices available to export.", "error");
       return;
     }
+
+    const XLSX = await import('xlsx');
 
     const data = listToExport.map(inv => {
       const amountNum = Number(inv.amount || 0);
@@ -1981,13 +1989,15 @@ function App() {
     addToast("Report Exported", "Downloaded CSV report sheet.", "success");
   };
 
-  // Export report to PDF helper
-  const handleExportPDF = () => {
+  // Export report to PDF helper. jsPDF (and its html2canvas/purify deps) is loaded on
+  // demand so it stays out of the initial bundle.
+  const handleExportPDF = async () => {
     if (generatedReport.length === 0) {
       addToast("Export Empty", "No data to export.", "warning");
       return;
     }
 
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
@@ -2043,13 +2053,15 @@ function App() {
     addToast("Report Exported", "Downloaded PDF document report.", "success");
   };
 
-  // Export report to Excel helper
-  const handleExportExcel = () => {
+  // Export report to Excel helper. xlsx is a large dependency, so it is imported on
+  // demand rather than shipped in the initial bundle.
+  const handleExportExcel = async () => {
     if (generatedReport.length === 0) {
       addToast("Export Empty", "No data to export.", "warning");
       return;
     }
 
+    const XLSX = await import('xlsx');
     const cleanData = generatedReport.map(item => {
       const cleanItem = {};
       Object.keys(item).forEach(key => {
