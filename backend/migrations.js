@@ -1036,6 +1036,13 @@ const runMigrations = async () => {
       END $$;
     `);
 
+    // assets also reference the vendor registry (the "Supplier / Vendor" field). The free-text
+    // supplier column is retained for display and bulk-import back-compat, kept in step with
+    // the chosen vendor's name; vendor_id is the referential link.
+    await db.directQuery(`
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS vendor_id INT REFERENCES vendors(id) ON DELETE SET NULL;
+    `);
+
     // 18. Extra reminder-window settings for the new scheduled jobs (section 3 of the audit).
     //     Each is a lead time in days; the jobs fire the first time an item enters the window.
     await db.directQuery(`

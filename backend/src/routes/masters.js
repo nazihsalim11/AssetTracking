@@ -25,9 +25,28 @@ function register(app, { requirePermission, requireUser }) {
     updatedAt: r.updated_at,
   });
 
+  // Counts every record that references this master value by name, across the tables that
+  // carry it. A non-empty result blocks a permanent delete (archive is always allowed).
+  // Matching is case/whitespace-insensitive to mirror how the pickers store the name.
+  async function dependencyReport(deps, name) {
+    const found = [];
+    for (const d of deps) {
+      // Skip tables that do not exist in this database (defensive; all normally present).
+      const exists = await db.query('SELECT to_regclass($1) AS t', [`public.${d.table}`]);
+      if (!exists.rows[0].t) continue;
+      const { rows } = await db.query(
+        `SELECT COUNT(*)::int AS c FROM ${d.table} WHERE LOWER(TRIM(${d.col})) = LOWER(TRIM($1))`,
+        [name]
+      );
+      if (rows[0].c > 0) found.push({ label: d.label, count: rows[0].c });
+    }
+    return found;
+  }
+
   // Builds the four CRUD routes for one master table. `extraCol` is the optional second
-  // text column (departments → description, locations → address).
-  function crud({ base, table, resource, label, extraCol }) {
+  // text column (departments → description, locations → address). `dependencies` lists the
+  // {table, col, label} references consulted before a permanent delete.
+  function crud({ base, table, resource, label, extraCol, dependencies = [] }) {
     const cols = extraCol ? `id, name, ${extraCol} AS description, is_active, created_at, updated_at`
                           : `id, name, NULL AS description, is_active, created_at, updated_at`;
 
@@ -110,26 +129,65 @@ function register(app, { requirePermission, requireUser }) {
       }
     });
 
-    // DELETE — archive (soft). Records that reference the name by value remain valid.
+    // DELETE — archive (soft) by default. Records that reference the name by value stay
+    // valid. Pass ?permanent=true to remove the row outright, which first verifies nothing
+    // references it; if anything does, the delete is refused (409) with a breakdown so the
+    // caller can archive instead. Both paths require the resource's `delete` permission.
     app.delete(`/api/${base}/:id`, async (req, res) => {
       const user = await requirePermission(req, res, resource, 'delete');
       if (!user) return;
+
+      const permanent = req.query.permanent === 'true';
       try {
-        const { rows } = await db.query(
-          `UPDATE ${table} SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING ${cols}`,
-          [req.params.id]
-        );
-        if (!rows.length) return res.status(404).json({ error: `${label} not found` });
-        res.json({ archived: true, ...mapRow(rows[0]) });
+        const target = await db.query(`SELECT ${cols} FROM ${table} WHERE id = $1`, [req.params.id]);
+        if (!target.rows.length) return res.status(404).json({ error: `${label} not found` });
+        const row = target.rows[0];
+
+        if (!permanent) {
+          const { rows } = await db.query(
+            `UPDATE ${table} SET is_active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING ${cols}`,
+            [req.params.id]
+          );
+          return res.json({ archived: true, ...mapRow(rows[0]) });
+        }
+
+        // Permanent delete: block if anything still references this value.
+        const deps = await dependencyReport(dependencies, row.name);
+        if (deps.length) {
+          const summary = deps.map((d) => `${d.count} ${d.label}`).join(', ');
+          return res.status(409).json({
+            error: `"${row.name}" cannot be deleted because it is still used by ${summary}. Reassign those records or archive this ${label} instead.`,
+            dependencies: deps,
+            canArchive: true
+          });
+        }
+
+        await db.query(`DELETE FROM ${table} WHERE id = $1`, [req.params.id]);
+        res.json({ deleted: true, id: Number(req.params.id), name: row.name });
       } catch (err) {
         console.error(`DELETE /api/${base} failed:`, err);
-        res.status(500).json({ error: `Could not archive: ${err.message}` });
+        res.status(500).json({ error: `Could not ${permanent ? 'delete' : 'archive'}: ${err.message}` });
       }
     });
   }
 
-  crud({ base: 'departments', table: 'departments', resource: 'departments', label: 'department', extraCol: 'description' });
-  crud({ base: 'locations', table: 'locations', resource: 'branches', label: 'location', extraCol: 'address' });
+  crud({
+    base: 'departments', table: 'departments', resource: 'departments', label: 'department', extraCol: 'description',
+    dependencies: [
+      { table: 'assets', col: 'department', label: 'asset(s)' },
+      { table: 'assets', col: 'associate_department', label: 'asset(s) as associate department' },
+      { table: 'users', col: 'department', label: 'employee(s)' },
+      { table: 'tickets', col: 'department', label: 'ticket(s)' },
+      { table: 'asset_assignments', col: 'department', label: 'allocation(s)' },
+      { table: 'kb_categories', col: 'department', label: 'knowledge base category(ies)' },
+    ],
+  });
+  crud({
+    base: 'locations', table: 'locations', resource: 'branches', label: 'location', extraCol: 'address',
+    dependencies: [
+      { table: 'assets', col: 'location', label: 'asset(s)' },
+    ],
+  });
 }
 
 module.exports = { register };

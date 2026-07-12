@@ -1,4 +1,5 @@
 const db = require('../../db');
+const { resolveVendor } = require('../utils/vendor');
 
 // Assets API — extracted verbatim from server.js. Employees are custodians, not
 // managers: they see only the assets currently assigned to them and may not create,
@@ -51,15 +52,25 @@ function register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_AS
     const {
       id, name, serialNumber, category, type, status, cost, purchaseDate,
       warrantyExpiry, department, associateDepartment, location, amcId, invoiceId,
-      assignedEmployee, depreciationLifeYears, notes, reorderLevel
+      assignedEmployee, depreciationLifeYears, notes, reorderLevel, supplier
     } = req.body;
+
+    // Vendor is optional on an asset, but when supplied it comes from the registry.
+    // The resolved name is snapshotted into `supplier` for display/back-compat; vendor_id
+    // is the referential link. A free-text supplier (e.g. bulk import) is still accepted.
+    let vendorId, vendorName;
+    try {
+      ({ vendorId, vendorName } = await resolveVendor({ vendorId: req.body.vendorId, vendor: supplier }, { required: false }));
+    } catch (err) {
+      return res.status(err.statusCode || 400).json({ error: err.message });
+    }
 
     const query = `
       INSERT INTO assets (
         id, name, serial_number, category, type, status, cost, purchase_date,
         warranty_expiry, department, associate_department, location, amc_id, invoice_id,
-        assigned_employee, depreciation_life_years, notes, reorder_level
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        assigned_employee, depreciation_life_years, notes, reorder_level, supplier, vendor_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *;
     `;
     // Useful Lifespan is optional: an omitted/blank value is stored as NULL rather
@@ -69,7 +80,7 @@ function register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_AS
       id, name, serialNumber, category, type, status || 'Available', cost || 0, purchaseDate || null,
       warrantyExpiry || null, department || '', associateDepartment || null, location || '', amcId || null, invoiceId || null,
       assignedEmployee || '', depreciationLifeYears ? parseInt(depreciationLifeYears) : null, notes || '',
-      reorderLevel ? parseInt(reorderLevel) : 0
+      reorderLevel ? parseInt(reorderLevel) : 0, vendorName || '', vendorId
     ];
 
     try {
@@ -145,6 +156,19 @@ function register(app, { requireUser, requirePermission, isEmployee, EMPLOYEE_AS
         }
         idx++;
       }
+    }
+
+    // Vendor: re-point via the registry (vendorId) or a free-text supplier override,
+    // keeping supplier (display name) and vendor_id (FK) in step.
+    if (fields.vendorId !== undefined || fields.supplier !== undefined) {
+      let resolved;
+      try {
+        resolved = await resolveVendor({ vendorId: fields.vendorId, vendor: fields.supplier }, { required: false });
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ error: err.message });
+      }
+      setClauses.push(`supplier = $${idx}`); values.push(resolved.vendorName || ''); idx++;
+      setClauses.push(`vendor_id = $${idx}`); values.push(resolved.vendorId); idx++;
     }
 
     if (setClauses.length === 0) {

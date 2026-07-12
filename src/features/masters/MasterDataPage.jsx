@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Archive, Check, Pencil, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { AlertTriangle, Archive, Check, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { api } from '../../api';
 import { SpinnerButton } from '../../SpinnerButton';
 
@@ -71,6 +71,19 @@ function MasterList({ title, noun, listFn, createFn, updateFn, deleteFn, canCrea
     }
   };
 
+  // Permanent delete. The backend refuses (409) if anything still references the record;
+  // its message explains what and suggests archiving instead, which we surface as-is.
+  const remove = async (row) => {
+    if (!window.confirm(`Permanently delete "${row.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteFn(row.id, { permanent: true });
+      addToast?.(`${title} deleted`, `"${row.name}" was permanently removed.`, 'success');
+      await afterChange();
+    } catch (err) {
+      addToast?.('Cannot delete', err.message, 'error');
+    }
+  };
+
   const restore = async (row) => {
     try {
       await updateFn(row.id, { isActive: true });
@@ -139,10 +152,13 @@ function MasterList({ title, noun, listFn, createFn, updateFn, deleteFn, canCrea
                     <button className="btn btn-secondary btn-sm" title="Rename" onClick={() => { setEditingId(row.id); setEditName(row.name); }}><Pencil size={13} /></button>
                   )}
                   {canDelete && row.isActive && (
-                    <button className="btn btn-secondary btn-sm" title="Archive" style={{ color: 'var(--status-disposed)' }} onClick={() => archive(row)}><Archive size={13} /></button>
+                    <button className="btn btn-secondary btn-sm" title="Archive (hide from pickers, keep history)" style={{ color: 'var(--status-maintenance)' }} onClick={() => archive(row)}><Archive size={13} /></button>
                   )}
                   {canEdit && !row.isActive && (
                     <button className="btn btn-secondary btn-sm" title="Restore" onClick={() => restore(row)}><RotateCcw size={13} /></button>
+                  )}
+                  {canDelete && (
+                    <button className="btn btn-secondary btn-sm" title="Delete permanently (only if unused)" style={{ color: 'var(--status-disposed)' }} onClick={() => remove(row)}><Trash2 size={13} /></button>
                   )}
                 </>
               )}

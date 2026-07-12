@@ -29,6 +29,7 @@ import { mockAuthService } from './auth'
 import LoginView from './LoginView'
 import CustomSelect from './CustomSelect'
 import FormSelect from './FormSelect'
+import VendorSelect from './VendorSelect'
 import RelativeTime from './RelativeTime'
 import { can as canPerm, canLegacy, roleLabel } from './permissions'
 import AsyncBoundary from './AsyncBoundary'
@@ -771,6 +772,10 @@ function App() {
 
     const qty = parseInt(data.get('quantity') || 1);
     const cost = parseFloat(data.get('cost') || 0);
+    // Vendor is optional on an asset and comes from the registry; resolve the id to its
+    // name for the optimistic local record (the server re-derives it authoritatively).
+    const assetVendorId = data.get('vendorId') || '';
+    const assetVendor = vendors.find(v => String(v.id) === String(assetVendorId));
     const newAsset = {
       id: data.get('id') || `AST-${String(assets.length + 1).padStart(3, '0')}`,
       name: data.get('name'),
@@ -798,7 +803,9 @@ function App() {
       brand: data.get('brand') || '',
       model: data.get('model') || '',
       unit: data.get('unit') || 'pcs',
-      supplier: data.get('supplier') || ''
+      reorderLevel: data.get('reorderLevel') ? parseInt(data.get('reorderLevel')) : 0,
+      vendorId: assetVendorId ? Number(assetVendorId) : null,
+      supplier: assetVendor ? assetVendor.name : ''
     };
 
     if (isApiConnected) {
@@ -861,6 +868,9 @@ function App() {
 
     const availableQty = totalQty - assignedQty;
 
+    const editVendorId = data.get('vendorId') || '';
+    const editVendor = vendors.find(v => String(v.id) === String(editVendorId));
+
     const updatedFields = {
       name: data.get('name'),
       serialNumber: data.get('serialNumber') || null,
@@ -880,8 +890,15 @@ function App() {
       brand: data.get('brand') || '',
       model: data.get('model') || '',
       unit: data.get('unit') || 'pcs',
-      supplier: data.get('supplier') || ''
+      reorderLevel: data.get('reorderLevel') ? parseInt(data.get('reorderLevel')) : 0
     };
+
+    // Only touch the vendor when one is actually selected, so editing an unrelated field on
+    // a legacy asset (which has no registry vendor yet) never wipes its existing supplier.
+    if (editVendorId) {
+      updatedFields.vendorId = Number(editVendorId);
+      updatedFields.supplier = editVendor ? editVendor.name : '';
+    }
 
     if (isApiConnected) {
       try {
@@ -3135,7 +3152,11 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Supplier / Vendor</label>
-                    <input type="text" name="supplier" placeholder="e.g. Lenovo Store" className="form-input" />
+                    <VendorSelect
+                      vendors={vendors}
+                      canManageVendors={can('vendors', 'create')}
+                      onManageVendors={() => { setAddAssetModal(false); navigate('finance'); }}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Initial Location Branch</label>
@@ -3254,7 +3275,12 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Supplier / Vendor</label>
-                    <input type="text" name="supplier" defaultValue={editAssetModal.supplier || ''} className="form-input" />
+                    <VendorSelect
+                      vendors={vendors}
+                      defaultValue={editAssetModal.vendorId ? String(editAssetModal.vendorId) : ''}
+                      canManageVendors={can('vendors', 'create')}
+                      onManageVendors={() => { setEditAssetModal(null); navigate('finance'); }}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Location Branch</label>
