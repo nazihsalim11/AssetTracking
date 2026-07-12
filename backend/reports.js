@@ -391,7 +391,7 @@ async function runDueScheduledReports() {
 
 /* ------------------------------------------------------------------ routes */
 
-function register(app, { requireUser, requirePermission }) {
+function register(app, { requirePermission }) {
   app.get('/api/reports/options', async (req, res) => {
     const user = await requirePermission(req, res, 'reports', 'view');
     if (!user) return;

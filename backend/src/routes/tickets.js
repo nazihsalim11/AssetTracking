@@ -1,6 +1,5 @@
 const db = require('../../db');
 const notifications = require('../../notifications');
-const scheduler = require('../../notifications/scheduler');
 const slaModel = require('../../slaModel');
 const slaEngine = require('../../slaEngine');
 const slaAssignment = require('../../slaAssignment');

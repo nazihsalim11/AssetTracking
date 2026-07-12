@@ -1,9 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 const cron = require('node-cron');
-const { randomUUID } = require('crypto');
 const db = require('./db');
 const { runMigrations } = require('./migrations');
 const storage = require('./storage');
@@ -13,10 +11,7 @@ const { registerCronRoutes } = require('./cronRoutes');
 const permissionModel = require('./permissionModel');
 const knowledgeBase = require('./knowledgeBase');
 const purchaseOrders = require('./purchaseOrders');
-const slaModel = require('./slaModel');
-const slaEngine = require('./slaEngine');
 const slaRoutes = require('./slaRoutes');
-const slaAssignment = require('./slaAssignment');
 const dashboards = require('./dashboards');
 const reports = require('./reports');
 const createAuth = require('./src/middleware/auth');
@@ -268,7 +263,9 @@ app.use('/api', (req, res) => {
 });
 
 // --- Global error handler (safety net; JSON, not HTML) ---
-app.use((err, req, res, next) => {
+// The 4-argument signature is what marks this as an Express error handler, so `_next`
+// must stay even though it is unused.
+app.use((err, req, res, _next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: err.message || 'Internal server error' });
 });

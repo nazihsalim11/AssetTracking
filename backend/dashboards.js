@@ -13,8 +13,6 @@
 
 const db = require('./db');
 
-const CLOSED_STATUSES = ['Resolved', 'Closed'];
-
 // Build a "WHERE department = $n" scope for non-Super-Admins, plus optional date range
 // on created_at. `prefix` qualifies the columns (e.g. 't.') for queries that join another
 // table carrying a department column, avoiding an ambiguous-reference error.
